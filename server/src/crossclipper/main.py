@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from crossclipper import health
 from crossclipper.auth import router as auth_router
 from crossclipper.devices import router as devices_router
+from crossclipper.items import router as items_router
 from crossclipper.auth.ratelimit import RateLimiter
 from crossclipper.config import Settings
 from crossclipper.db.session import init_db, make_engine
@@ -44,4 +45,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth_router.router, prefix="/api/v1")
     app.include_router(devices_router.router, prefix="/api/v1")
+    app.include_router(items_router.router, prefix="/api/v1")
     return app

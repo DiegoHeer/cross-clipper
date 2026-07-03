@@ -1,0 +1,56 @@
+from fastapi import APIRouter, Depends, Request, Response
+from sqlalchemy.orm import Session
+from ulid import ULID
+
+from crossclipper.auth.deps import require_auth
+from crossclipper.auth.service import AuthContext
+from crossclipper.db.models import Device
+from crossclipper.db.session import get_session
+from crossclipper.errors import AppError
+from crossclipper.items.repo import ItemRepo
+from crossclipper.items.schemas import ItemIn, ItemKind, ItemOut
+
+router = APIRouter(prefix="/items", tags=["items"])
+
+_SUPPORTED_KINDS = {ItemKind.text, ItemKind.link}
+
+
+@router.post("", status_code=201, response_model=ItemOut)
+async def create_item(payload: ItemIn, request: Request, response: Response,
+                      ctx: AuthContext = Depends(require_auth),
+                      session: Session = Depends(get_session)) -> ItemOut:
+    if payload.kind not in _SUPPORTED_KINDS:
+        raise AppError(422, "unsupported_kind",
+                       f"kind '{payload.kind.value}' is not supported yet")
+
+    max_bytes = request.app.state.settings.item_max_bytes
+    if len(payload.body.encode("utf-8")) > max_bytes:
+        raise AppError(413, "item_too_large", f"item body exceeds {max_bytes} bytes")
+
+    # Validate target_device_id if supplied: must be a non-revoked device of this user
+    if payload.target_device_id is not None:
+        device = session.get(Device, payload.target_device_id)
+        if device is None or device.user_id != ctx.user_id or device.revoked_at is not None:
+            raise AppError(422, "unknown_device",
+                           "target_device_id does not reference a valid device")
+
+    repo = ItemRepo(session)
+    if payload.id is not None:
+        try:
+            ULID.from_str(payload.id)
+        except ValueError:
+            raise AppError(422, "invalid_id", "item id must be a valid ULID")
+        existing = repo.get(ctx.user_id, payload.id)
+        if existing is not None:
+            response.status_code = 200  # idempotent replay
+            return ItemOut.model_validate(existing)
+
+    item = repo.create(
+        id=payload.id or str(ULID()),
+        user_id=ctx.user_id,
+        origin_device_id=ctx.device_id,
+        kind=payload.kind.value,
+        body=payload.body,
+        target_device_id=payload.target_device_id,
+    )
+    return ItemOut.model_validate(item)
