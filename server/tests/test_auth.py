@@ -73,6 +73,103 @@ def test_validation_errors_use_structured_shape(client):
     assert "password" in body["message"]
 
 
+# ---------------------------------------------------------------------------
+# FINDING-1: password byte-length cap (72 UTF-8 bytes, bcrypt hard limit)
+# ---------------------------------------------------------------------------
+
+
+def test_register_73_byte_ascii_password_returns_422(tmp_path):
+    """73 ASCII bytes exceeds the bcrypt 72-byte limit → must yield 422, not 500."""
+    app = create_app(
+        Settings(secret_key="t", data_dir=tmp_path, allow_registration=True)
+    )
+    with TestClient(app) as c:
+        r = c.post(
+            "/api/v1/auth/register",
+            json={"email": "long@example.com", "password": "a" * 73},
+        )
+    assert r.status_code == 422
+    body = r.json()
+    assert body["code"] == "validation_error"
+    assert "72" in body["message"]
+
+
+def test_register_multibyte_password_over_72_bytes_returns_422(tmp_path):
+    """40 × 'é' = 40 chars but 80 UTF-8 bytes → must yield 422 (char count passes max_length=72)."""
+    app = create_app(
+        Settings(secret_key="t", data_dir=tmp_path, allow_registration=True)
+    )
+    with TestClient(app) as c:
+        r = c.post(
+            "/api/v1/auth/register",
+            json={"email": "multi@example.com", "password": "é" * 40},
+        )
+    assert r.status_code == 422
+    body = r.json()
+    assert body["code"] == "validation_error"
+    assert "72" in body["message"]
+
+
+def test_register_exactly_72_byte_password_succeeds(tmp_path):
+    """Exactly 72 ASCII bytes is the boundary — must succeed with 201."""
+    app = create_app(
+        Settings(secret_key="t", data_dir=tmp_path, allow_registration=True)
+    )
+    with TestClient(app) as c:
+        r = c.post(
+            "/api/v1/auth/register",
+            json={"email": "boundary@example.com", "password": "a" * 72},
+        )
+    assert r.status_code == 201
+
+
+def test_login_with_over_72_byte_password_returns_422(tmp_path):
+    """Login with a >72-byte password must yield 422, not 500 (bcrypt checkpw limit)."""
+    app = create_app(Settings(secret_key="t", data_dir=tmp_path))
+    with TestClient(app) as c:
+        # Register with a short valid password first.
+        c.post(
+            "/api/v1/auth/register",
+            json={"email": "u@example.com", "password": "hunter22!"},
+        )
+        r = c.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "u@example.com",
+                "password": "a" * 73,
+                "device_name": "d",
+                "platform": "other",
+            },
+        )
+    assert r.status_code == 422
+    body = r.json()
+    assert body["code"] == "validation_error"
+    assert "72" in body["message"]
+
+
+def test_login_multibyte_password_over_72_bytes_returns_422(tmp_path):
+    """40 × 'é' login password (80 UTF-8 bytes, 40 chars) → 422."""
+    app = create_app(Settings(secret_key="t", data_dir=tmp_path))
+    with TestClient(app) as c:
+        c.post(
+            "/api/v1/auth/register",
+            json={"email": "u@example.com", "password": "hunter22!"},
+        )
+        r = c.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "u@example.com",
+                "password": "é" * 40,
+                "device_name": "d",
+                "platform": "other",
+            },
+        )
+    assert r.status_code == 422
+    body = r.json()
+    assert body["code"] == "validation_error"
+    assert "72" in body["message"]
+
+
 def test_integrity_error_on_race_returns_409(tmp_path):
     """Simulate registration race: get_by_email returns None for both requests,
     but the second create() hits the DB UNIQUE constraint (IntegrityError).

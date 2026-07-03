@@ -10,7 +10,18 @@ from crossclipper.db.models import Device, utcnow
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    """Hash *password* with bcrypt.
+
+    Belt-and-braces: raises ``AppError(422)`` if bcrypt rejects the password
+    (e.g. > 72 UTF-8 bytes).  In normal operation the schema validator catches
+    this first; this guard protects future call sites that bypass the schema.
+    """
+    try:
+        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    except ValueError as exc:
+        from crossclipper.errors import AppError  # local import avoids cycle
+
+        raise AppError(422, "validation_error", str(exc)) from exc
 
 
 def verify_password(password: str, hashed: str) -> bool:
