@@ -294,7 +294,7 @@
             "type": "string"
           },
           "password": {
-            "maxLength": 128,
+            "maxLength": 72,
             "minLength": 8,
             "title": "Password",
             "type": "string"
