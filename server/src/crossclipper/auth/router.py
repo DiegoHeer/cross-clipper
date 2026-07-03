@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from crossclipper.auth import service
@@ -18,5 +19,8 @@ async def register(payload: RegisterIn, request: Request,
         raise AppError(403, "registration_closed", "registration is closed on this server")
     if repo.get_by_email(payload.email) is not None:
         raise AppError(409, "email_taken", "a user with this email already exists")
-    user = repo.create(payload.email, service.hash_password(payload.password))
+    try:
+        user = repo.create(payload.email, service.hash_password(payload.password))
+    except IntegrityError:
+        raise AppError(409, "email_taken", "a user with this email already exists")
     return RegisterOut(user_id=user.id)
