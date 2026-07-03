@@ -4147,3 +4147,14 @@ Approved after plan writing (spec §3/§4 updated). Items carry an optional **no
 - **Task 9 (WS broadcasts):** `item_new` events carry the full item incl. `target_device_id` (no server-side filtering — clients apply the notification policy locally in Phase 1).
 - **Tasks 11–12 (codegen/ApiClient):** field flows through generated types; `createItem` accepts optional `targetDeviceId`.
 - **Tasks 13–17 (core/CLI):** `Item` model includes the field; CLI prints a `→ <device>` marker on targeted items. No notification UI in Phase 1 — policy behavior (silent default, per-device toggle, target-always-notifies) is client-phase work.
+
+---
+
+# Amendment 2026-07-03 (2): E2E testing layers
+
+Approved (see docs/superpowers/specs/2026-07-03-e2e-testing-design.md). Constraint: E2E validation runs against a REAL uvicorn subprocess, never in-process.
+
+- **New PR "E2E-A" (after PR 5):** `server/tests_e2e/` — live-server pytest fixture (subprocess + temp /data + /health wait), five journeys (first-run, item lifecycle incl. targeting, WS live events, revocation incl. WS close, server-kill recovery drill), `e2e` marker, CI job.
+- **New PR "E2E-B" (after PR 6):** Schemathesis against the live server in base-URL mode, driven by the committed openapi.json; bounded example budget; no-5xx + schema conformance checks; CI job extension.
+- **Task 18 amended:** its server-kill/reconnect exit-criterion drill is absorbed into E2E-A journey 5; Task 18 retains only the thin CLI demo script.
+- Layer D (Docker smoke) is phase-2 scope, alongside Docker packaging.
