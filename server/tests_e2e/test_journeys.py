@@ -4,31 +4,38 @@ Journeys run against a REAL uvicorn subprocess over real sockets.
 Each journey is a single test function so pytest -m e2e gives clear per-journey
 pass/fail output.
 
-All journeys that share the session-scoped server (journeys 1, 2, 4) use the
-same registered user (owner@example.com / password123!).  Journey 1 performs
-the actual registration; journeys 2 and 4 just log in as fresh devices.
-This is intentional: the server runs with CC_ALLOW_REGISTRATION=false, so only
-the very first registration succeeds — exactly the production default.
+Journey 1 uses a function-scoped `first_run_server` (fresh, empty data dir) so
+it can genuinely test the first-run registration flow.  Journeys 2 and 4 use
+the session-scoped `server`; the session-scoped `_ensure_session_user` autouse
+fixture registers the shared user before any test runs, making those journeys
+independently executable.
 
 Journey 3 (live WS events) arrives with the WS journeys (later PR).
-Journey 5 uses its own function-scoped server to safely kill-and-restart.
+Journey 5 uses its own function-scoped `restart_server` to safely kill-and-restart.
 """
 
 from __future__ import annotations
 
-import time
-
 import httpx
 import pytest
 
-from tests_e2e.conftest import ServerInfo, _start_server, _stop_server, _wait_healthy
+from tests_e2e.conftest import (
+    _SESSION_EMAIL as _EMAIL,
+)
+from tests_e2e.conftest import (
+    _SESSION_PASSWORD as _PASSWORD,
+)
+from tests_e2e.conftest import (
+    ServerInfo,
+    _start_server,
+    _stop_server,
+    _wait_healthy,
+    _wait_port_free,
+)
 
 # ---------------------------------------------------------------------------
-# Shared credentials — used across journeys 1, 2, 4 on the session server
+# Shared credentials — used across journeys 1, 2, 4
 # ---------------------------------------------------------------------------
-
-_EMAIL = "owner@example.com"
-_PASSWORD = "password123!"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -67,14 +74,14 @@ def _login(
 
 
 @pytest.mark.e2e
-def test_journey_first_run(server: ServerInfo) -> None:
+def test_journey_first_run(first_run_server: ServerInfo) -> None:
     """
     Register → second register 403 → login two devices → GET /devices shows both.
 
-    This test is the ONLY one that performs registration against the session
-    server; all other journeys rely on the user created here.
+    Uses its own function-scoped server so it always runs against a truly fresh
+    instance, regardless of test execution order.
     """
-    base = server.base_url
+    base = first_run_server.base_url
 
     # 1a. First registration succeeds
     r = httpx.post(
@@ -84,7 +91,7 @@ def test_journey_first_run(server: ServerInfo) -> None:
     assert r.status_code == 201, f"first register failed: {r.text}"
     assert "user_id" in r.json()
 
-    # 1b. Second registration is forbidden (allow_registration=false, user already exists)
+    # 1b. Second registration is forbidden (user already exists, single-user policy)
     r2 = httpx.post(
         f"{base}/api/v1/auth/register",
         json={"email": "other@example.com", "password": _PASSWORD},
@@ -295,8 +302,8 @@ def test_journey_server_kill_recovery(restart_server: ServerInfo) -> None:
     # Kill the server (SIGTERM, then wait)
     _stop_server(proc)
 
-    # Small delay to ensure the port is freed by the OS
-    time.sleep(0.5)
+    # Wait until the OS actually frees the port before rebinding.
+    _wait_port_free(restart_server.port)
 
     # Restart on the SAME port and SAME data dir
     new_proc = _start_server(port, data_dir)
