@@ -19,6 +19,7 @@ Implementation plans live in `docs/superpowers/plans/`. Work proceeds phase-by-p
 ## Process conventions (project-specific)
 
 - **Implementation is executed via subagents** (superpowers:subagent-driven-development), keeping the main session free for design work.
+- **ALL changes go through PRs** — including docs/specs/README. `main` is branch-protected (PR + green CI required, no direct pushes, applies to admins). Do not commit to main directly.
 - Specs and plans are reviewed by Diego before implementation starts; nothing is implemented without an approved plan.
 - UI design decisions are made via visual mockups (brainstorming visual companion, sessions in `.superpowers/` — gitignored). Decisions and their rejected alternatives are recorded in the client specs.
 
