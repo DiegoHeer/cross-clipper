@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
@@ -23,6 +25,8 @@ async def ws_endpoint(websocket: WebSocket, token: str = Query(...)) -> None:
             msg = await websocket.receive_json()
             if isinstance(msg, dict) and msg.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
+    except (json.JSONDecodeError, ValueError):
+        await websocket.close(code=4400)
     except WebSocketDisconnect:
         pass
     finally:

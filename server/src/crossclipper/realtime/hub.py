@@ -14,6 +14,8 @@ class Hub:
 
     def remove(self, user_id: str, ws: WebSocket) -> None:
         self._sockets[user_id].discard(ws)
+        if not self._sockets[user_id]:
+            del self._sockets[user_id]
 
     async def broadcast(self, user_id: str, event: dict) -> None:
         for ws in list(self._sockets.get(user_id, ())):
