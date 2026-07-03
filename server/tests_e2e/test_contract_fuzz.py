@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -144,6 +145,9 @@ def fuzz_schema(fuzz_server: ServerInfo, fuzz_bearer_token: str):
     config = SchemathesisConfig.from_dict(
         {
             "base-url": fuzz_server.base_url,
+            # Fixed seed at top level (seed is a SchemathesisConfig field, not a
+            # generation sub-key) for reproducible CI runs.
+            "seed": 12345,
             "generation": {"max-examples": _MAX_EXAMPLES},
         }
     )
@@ -168,6 +172,20 @@ def fuzz_schema(fuzz_server: ServerInfo, fuzz_bearer_token: str):
 _schema = schemathesis.pytest.from_fixture("fuzz_schema")
 
 
+def _password_over_72_bytes(case: Any) -> bool:  # noqa: ANN401
+    """Return True when the generated body contains a password that exceeds 72 UTF-8 bytes.
+
+    Guards against absent body, non-dict body, missing/non-string password field.
+    """
+    body = getattr(case, "body", None)
+    if not isinstance(body, dict):
+        return False
+    password = body.get("password")
+    if not isinstance(password, str):
+        return False
+    return len(password.encode()) > 72
+
+
 @_schema.parametrize()
 @pytest.mark.fuzz
 def test_contract_fuzz(case) -> None:  # noqa: ANN001
@@ -177,18 +195,55 @@ def test_contract_fuzz(case) -> None:  # noqa: ANN001
     the rationale on excluding response-schema conformance checks.
 
     FINDING-1 (xfail): POST /api/v1/auth/register crashes with 500 when the
-    password body is ≥ 73 bytes.  Marked xfail so the suite stays green while
-    the bug is tracked for triage.  See the module docstring for details.
+    password body is ≥ 73 bytes.  Marked xfail ONLY when that specific condition
+    holds — other register inputs still go through normal validation.
+    See the module docstring for details.
     """
     from schemathesis.checks import not_a_server_error
 
+    response = case.call()
+
     # FINDING-1: register endpoint crashes on passwords > 72 bytes (bcrypt limit).
-    # Mark the entire register operation as expected-failure until the bug is fixed.
-    if case.operation.label == "POST /api/v1/auth/register":
+    # xfail only when the specific tolerated condition holds; all other register
+    # responses still go through not_a_server_error validation below.
+    if (
+        case.operation.label == "POST /api/v1/auth/register"
+        and response.status_code == 500
+        and _password_over_72_bytes(case)
+    ):
         pytest.xfail(
             "FINDING-1: POST /api/v1/auth/register returns 500 on password "
             ">72 bytes — bcrypt ValueError not caught by error handlers. "
             "Tracked for triage; do not fix in this task."
         )
 
-    case.call_and_validate(checks=[not_a_server_error])
+    case.validate_response(response, checks=[not_a_server_error])
+
+
+# ---------------------------------------------------------------------------
+# Deterministic regression case for FINDING-1
+# ---------------------------------------------------------------------------
+# Ensures FINDING-1 stays visibly tracked regardless of whether the fuzz corpus
+# (seeded or not) happens to generate a >72-byte password in any given run.
+
+
+@pytest.mark.fuzz
+def test_register_password_over_72_bytes_xfail(fuzz_server: ServerInfo) -> None:
+    """FINDING-1 regression: a 73-byte password triggers a 500 (bcrypt limit).
+
+    This is a deterministic (non-fuzz-generated) probe so the finding is always
+    visible even if the seeded corpus never produces a long-enough password.
+    """
+    password = "a" * 73  # 73 ASCII bytes → exactly one over the bcrypt limit
+    r = httpx.post(
+        f"{fuzz_server.base_url}/api/v1/auth/register",
+        json={"email": "finding1@example.com", "password": password},
+    )
+    if r.status_code == 500:
+        pytest.xfail(
+            "FINDING-1: POST /api/v1/auth/register returns 500 on password "
+            ">72 bytes — bcrypt ValueError not caught by error handlers. "
+            "Tracked for triage; do not fix in this task."
+        )
+    # If the bug has been fixed (e.g. 422 returned), the test passes normally.
+    assert r.status_code != 500, f"Unexpected non-500 failure: {r.status_code} {r.text}"
