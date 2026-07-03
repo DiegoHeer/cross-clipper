@@ -267,4 +267,47 @@ describe("SyncEngine scenarios", () => {
 
     engine.stop();
   });
+
+  // Item 2 fix: stop() racing an in-flight resync must not emit status:live or start pings.
+  it("stop() during in-flight pull: no live status emitted, no pings sent", async () => {
+    const server = new FakeServer();
+    // Make the list call hang until we manually resolve it.
+    let resolveList!: () => void;
+    const listHeld = new Promise<void>((res) => { resolveList = res; });
+    server.listDelayMs = 0;
+    // Override fetchFn to hold the first GET /items indefinitely.
+    const origFetch = server.fetchFn;
+    let listHeld_ = false;
+    server.fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/v1/items" && (init?.method ?? "GET") === "GET" && !listHeld_) {
+        listHeld_ = true;
+        await listHeld;
+      }
+      return origFetch(input as RequestInfo, init);
+    }) as typeof fetch;
+
+    const { engine, events } = makeEngine(server);
+    await engine.start();
+    await tick(); // socket opens, resync starts, pull is now blocked
+
+    // Call stop() while the pull is in-flight.
+    engine.stop();
+
+    // Resolve the blocked pull.
+    resolveList();
+    await sleep(20);
+
+    // Must NOT have emitted status:live after stop().
+    const statusesAfterStop = events
+      .map((e) => (e as { status?: string }).status)
+      .filter((s): s is string => s !== undefined);
+    // The last status must be "stopped", not "live".
+    expect(statusesAfterStop[statusesAfterStop.length - 1]).toBe("stopped");
+    expect(statusesAfterStop).not.toContain("live");
+
+    // No pings must have been sent (ping timer must not have started).
+    const pings = server.sockets.flatMap((s) => s.sent).filter((s) => s === '{"type":"ping"}');
+    expect(pings).toHaveLength(0);
+  });
 });
