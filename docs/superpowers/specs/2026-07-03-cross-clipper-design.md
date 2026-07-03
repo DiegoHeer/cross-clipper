@@ -126,7 +126,7 @@ All endpoints live under `/api/v1/`. Clients send their client version; the serv
 ```
 POST   /auth/register            (first-run only; locks after user exists — MVP)
 POST   /auth/login               → { token, device_id }   (registers device in same call)
-GET    /devices                  → list (name, platform, last_seen)
+GET    /devices                  → list (name, platform, last_seen, online)   # online amended 2026-07-03, see Presence
 PATCH  /devices/{id}             (rename)
 DELETE /devices/{id}             (revoke)
 
@@ -135,7 +135,7 @@ POST   /items                    { kind, body, target_device_id? }  → Item
 DELETE /items/{id}               (soft delete)
 
 POST   /push/register            { transport, token }      (APNs/FCM/UnifiedPush)
-GET    /health                   (readiness: DB reachable + blob dir writable)
+GET    /health                   → { status, app: "crossclipper", version, registration_open }   # identity fields amended 2026-07-03 (onboarding probe); 503 shape unchanged
 
 # Media phase (designed now, built later):
 POST   /blobs                    (upload) → { blob_id }, then POST /items with blob_id
@@ -152,6 +152,10 @@ server → client:  { type: "item_new",     item: {...} }
                   { type: "device_changed" }
 client → server:  { type: "ping" }   (keepalive)
 ```
+
+### Presence (amended 2026-07-03)
+
+Presence is a true but minimal protocol built on machinery that already exists. A device is **online ⇔ it holds at least one open WebSocket** in the server's in-memory hub registry; `GET /devices` reports this as a computed `online` flag (no schema change to `Device` — `last_seen_at` keeps meaning "last authenticated contact" and is display-only for offline devices). The server broadcasts the existing `device_changed` event on presence *transitions* only: a device's first socket opening (offline→online) and its last socket closing (online→offline). Clients already re-fetch the device list on `device_changed`, so presence follows the same nudge→pull discipline as everything else — a missed event self-corrects on the next devices fetch. Silently-dropped connections are closed by the WS server's built-in ping keepalive, which triggers the offline transition. No new event types, no client-side freshness heuristics.
 
 ### Sync model: pull-based with live nudges
 
