@@ -36,3 +36,24 @@ jobs:
 
       - name: Test
         run: uv run pytest
+
+  e2e:
+    name: E2E journeys (Layer A)
+    runs-on: ubuntu-latest
+    needs: server
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: E2E tests
+        run: uv run pytest -m e2e tests_e2e/
