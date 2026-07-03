@@ -19,7 +19,7 @@ async def ws_endpoint(websocket: WebSocket, token: str = Query(...)) -> None:
 
     hub = websocket.app.state.hub
     await websocket.accept()
-    hub.add(ctx.user_id, websocket)
+    hub.add(ctx.user_id, ctx.device_id, websocket)
     try:
         while True:
             msg = await websocket.receive_json()
@@ -30,4 +30,4 @@ async def ws_endpoint(websocket: WebSocket, token: str = Query(...)) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        hub.remove(ctx.user_id, websocket)
+        hub.remove(ctx.user_id, ctx.device_id, websocket)

@@ -13,16 +13,21 @@ router = APIRouter(prefix="/devices", tags=["devices"])
 
 
 @router.get("", response_model=DevicesOut)
-async def list_devices(ctx: AuthContext = Depends(require_auth),
-                       session: Session = Depends(get_session)) -> DevicesOut:
+async def list_devices(
+    ctx: AuthContext = Depends(require_auth), session: Session = Depends(get_session)
+) -> DevicesOut:
     devices = DeviceRepo(session).list_active(ctx.user_id)
     return DevicesOut(devices=[DeviceOut.model_validate(d) for d in devices])
 
 
 @router.patch("/{device_id}", response_model=DeviceOut)
-async def rename_device(device_id: str, payload: DeviceRenameIn, request: Request,
-                        ctx: AuthContext = Depends(require_auth),
-                        session: Session = Depends(get_session)) -> DeviceOut:
+async def rename_device(
+    device_id: str,
+    payload: DeviceRenameIn,
+    request: Request,
+    ctx: AuthContext = Depends(require_auth),
+    session: Session = Depends(get_session),
+) -> DeviceOut:
     repo = DeviceRepo(session)
     device = repo.get(ctx.user_id, device_id)
     if device is None or device.revoked_at is not None:
@@ -34,9 +39,12 @@ async def rename_device(device_id: str, payload: DeviceRenameIn, request: Reques
 
 
 @router.delete("/{device_id}", status_code=204)
-async def revoke_device(device_id: str, request: Request,
-                        ctx: AuthContext = Depends(require_auth),
-                        session: Session = Depends(get_session)) -> Response:
+async def revoke_device(
+    device_id: str,
+    request: Request,
+    ctx: AuthContext = Depends(require_auth),
+    session: Session = Depends(get_session),
+) -> Response:
     repo = DeviceRepo(session)
     device = repo.get(ctx.user_id, device_id)
     if device is None or device.revoked_at is not None:
@@ -44,5 +52,7 @@ async def revoke_device(device_id: str, request: Request,
     repo.revoke(device)
     TokenRepo(session).delete_for_device(device.id)
     session.commit()
+    # Order: commit → close revoked socket → broadcast device_changed to the rest.
+    await request.app.state.hub.close_device(ctx.user_id, device_id)
     await request.app.state.hub.broadcast(ctx.user_id, {"type": "device_changed"})
     return Response(status_code=204)
