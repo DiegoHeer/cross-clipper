@@ -37,6 +37,15 @@ class AuthContext:
 
 
 def authenticate_token(session: Session, raw_token: str) -> AuthContext | None:
+    """Validate a raw bearer token and return its AuthContext, or None if invalid.
+
+    Side-effect: updates ``device.last_seen_at`` on success.  This write is
+    committed by the ``get_session`` dependency that the HTTP layer wraps around
+    each request (commit-on-success / rollback-on-error).  Any future non-HTTP
+    caller (e.g. the WebSocket handler in Task 8) MUST commit the session
+    explicitly after this function returns, or the touch will be silently dropped.
+    Do NOT refactor into a separate ``touch_device()`` call — Task 8 will revisit.
+    """
     from crossclipper.auth.repo import TokenRepo  # local import avoids cycle
 
     candidate = hash_token(raw_token)

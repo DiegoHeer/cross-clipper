@@ -15,9 +15,10 @@ def rate_limit(request: Request, bucket: str) -> None:
 async def require_auth(request: Request,
                        session: Session = Depends(get_session)) -> AuthContext:
     header = request.headers.get("authorization", "")
-    if not header.lower().startswith("bearer "):
+    parts = header.split(None, 1)  # split on any whitespace, max 2 parts
+    if len(parts) != 2 or parts[0].lower() != "bearer":
         raise AppError(401, "invalid_token", "missing bearer token")
-    ctx = authenticate_token(session, header[7:])
+    ctx = authenticate_token(session, parts[1])
     if ctx is None:
         raise AppError(401, "invalid_token", "invalid, expired or revoked token")
     return ctx

@@ -17,5 +17,8 @@ def app(settings):
 
 @pytest.fixture
 def client(app):
+    # `app` depends on `settings(tmp_path)`, which is function-scoped (pytest default).
+    # Each test therefore receives a brand-new app instance — and a brand-new
+    # `app.state.limiter` — so rate-limit counts never leak between tests.
     with TestClient(app) as c:
         yield c

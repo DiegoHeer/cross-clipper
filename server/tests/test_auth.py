@@ -1,8 +1,17 @@
+from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
 
-from crossclipper.config import Settings
-from crossclipper.main import create_app
+import pytest
+from fastapi import Depends
 from fastapi.testclient import TestClient
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from crossclipper.auth.deps import require_auth
+from crossclipper.auth.service import AuthContext
+from crossclipper.config import Settings
+from crossclipper.db.models import AuthToken, Device
+from crossclipper.main import create_app
 
 
 def test_first_registration_succeeds_then_locks(client):
@@ -114,3 +123,71 @@ def test_whoami_roundtrip_and_rejections(client):
     r = client.get("/api/v1/auth/whoami", headers=auth_headers("bogus"))
     assert r.status_code == 401
     assert r.json()["code"] == "invalid_token"
+
+
+# ---------------------------------------------------------------------------
+# Tests for token expiry and device revocation — use /whoami as the protected
+# probe route (already exists in production; no test-only route needed).
+# ---------------------------------------------------------------------------
+
+
+def test_expired_token_returns_401(tmp_path):
+    """A token whose expires_at is in the past must yield 401."""
+    app = create_app(Settings(secret_key="t", data_dir=tmp_path))
+    with TestClient(app) as c:
+        token, _ = register_and_login(c)
+        # Confirm token works before expiry.
+        assert c.get("/api/v1/auth/whoami", headers=auth_headers(token)).status_code == 200
+
+        # Fast-forward expires_at to the past directly in the DB.
+        past = datetime(2000, 1, 1)
+        with Session(app.state.engine) as session:
+            session.execute(
+                update(AuthToken).values(expires_at=past)
+            )
+            session.commit()
+
+        r = c.get("/api/v1/auth/whoami", headers=auth_headers(token))
+        assert r.status_code == 401
+        assert r.json()["code"] == "invalid_token"
+
+
+def test_revoked_device_returns_401_other_device_still_works(tmp_path):
+    """Revoking device A must 401 its token while device B's token stays valid."""
+    app = create_app(Settings(secret_key="t", data_dir=tmp_path, allow_registration=True))
+    with TestClient(app) as c:
+        # Register once; login twice as two separate devices.
+        c.post("/api/v1/auth/register",
+               json={"email": "u@x.y", "password": "hunter22!"})
+        r1 = c.post("/api/v1/auth/login", json={
+            "email": "u@x.y", "password": "hunter22!",
+            "device_name": "device-A", "platform": "other"})
+        assert r1.status_code == 200
+        token_a, device_id_a = r1.json()["token"], r1.json()["device_id"]
+
+        r2 = c.post("/api/v1/auth/login", json={
+            "email": "u@x.y", "password": "hunter22!",
+            "device_name": "device-B", "platform": "other"})
+        assert r2.status_code == 200
+        token_b = r2.json()["token"]
+
+        # Both tokens work.
+        assert c.get("/api/v1/auth/whoami", headers=auth_headers(token_a)).status_code == 200
+        assert c.get("/api/v1/auth/whoami", headers=auth_headers(token_b)).status_code == 200
+
+        # Revoke device A directly in the DB.
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        with Session(app.state.engine) as session:
+            session.execute(
+                update(Device)
+                .where(Device.id == device_id_a)
+                .values(revoked_at=now)
+            )
+            session.commit()
+
+        # Device A token now 401s; device B is unaffected.
+        r = c.get("/api/v1/auth/whoami", headers=auth_headers(token_a))
+        assert r.status_code == 401
+        assert r.json()["code"] == "invalid_token"
+
+        assert c.get("/api/v1/auth/whoami", headers=auth_headers(token_b)).status_code == 200
