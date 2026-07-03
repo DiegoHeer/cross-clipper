@@ -33,7 +33,8 @@ describe("SyncEngine scenarios", () => {
     await sleep(20);
 
     expect(bodies(events)).toEqual(["item-0", "item-1", "item-2", "item-3", "item-4"]);
-    expect(await storage.get("cc.cursor")).toBe(last.id);
+    // Cursor is an opaque sync_seq string (not item id); verify it equals the seq of the last item.
+    expect(await storage.get("cc.cursor")).toBe(String(server.itemSyncSeq.get(last.id)));
     expect(events.filter((e) => e.type === "status").map((e) => (e as { status: string }).status))
       .toEqual(["connecting", "syncing", "live"]);
     engine.stop();

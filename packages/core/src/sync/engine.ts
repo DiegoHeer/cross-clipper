@@ -134,8 +134,6 @@ export class SyncEngine {
           this.emit({ type: "item", item });
         }
       }
-      const lastItem = page.items[page.items.length - 1];
-      if (lastItem) cursor = lastItem.id;
       if (!page.next_cursor) break;
       cursor = page.next_cursor;
     }

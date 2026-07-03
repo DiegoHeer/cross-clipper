@@ -53,6 +53,14 @@ export class FakeServer {
   rejectNextCreateWith: { status: number; code: string } | null = null;
   postAttempts = 0;
   private seq = 0;
+  // Monotonic sync_seq: assigned on create, re-assigned on delete (mirrors server repo.py).
+  // Stored per item-id so deleteItem can bump it without touching Item type.
+  private syncSeq = 0;
+  readonly itemSyncSeq = new Map<string, number>();
+
+  private nextSyncSeq(): number {
+    return ++this.syncSeq;
+  }
 
   socketFactory: SocketFactory = () => {
     const s = new FakeSocket();
@@ -71,6 +79,7 @@ export class FakeServer {
       blob_id: null, created_at: "2026-07-03T10:00:00", deleted_at: null,
       target_device_id: null,
     };
+    this.itemSyncSeq.set(item.id, this.nextSyncSeq());
     this.items.push(item);
     return item;
   }
@@ -80,6 +89,9 @@ export class FakeServer {
     if (it) {
       it.deleted_at = "2026-07-03T11:00:00";
       it.body = "";
+      // Re-assign sync_seq so the tombstone moves ahead of any cursor that
+      // already consumed this item when it was live (mirrors server soft_delete).
+      this.itemSyncSeq.set(id, this.nextSyncSeq());
     }
   }
 
@@ -95,12 +107,27 @@ export class FakeServer {
       if (this.listDelayMs) await sleep(this.listDelayMs);
       const cursor = url.searchParams.get("cursor");
       const limit = Number(url.searchParams.get("limit") ?? "100");
+      // Mirror server semantics: filter strictly by sync_seq > cursor (opaque integer string).
+      // Without cursor (cold pull): exclude tombstones from initial delivery, matching server
+      // include_deleted=false default (items live at the time of the pull).
+      const seqCursor = cursor !== null ? (parseInt(cursor, 10) || 0) : null;
       const rows = this.items
-        .filter((i) => (cursor ? i.id >= cursor : i.deleted_at === null))
-        .sort((a, b) => (a.id < b.id ? -1 : 1));
+        .filter((i) => {
+          const seq = this.itemSyncSeq.get(i.id) ?? 0;
+          if (seqCursor !== null) return seq > seqCursor;
+          return i.deleted_at === null;
+        })
+        .sort((a, b) => {
+          const sa = this.itemSyncSeq.get(a.id) ?? 0;
+          const sb = this.itemSyncSeq.get(b.id) ?? 0;
+          return sa - sb;
+        });
       const page = rows.slice(0, limit);
-      const next = rows.length > limit ? page[page.length - 1]!.id : null;
-      return json(200, { items: page, next_cursor: next });
+      if (!page.length) return json(200, { items: [], next_cursor: null });
+      // Always return next_cursor as highest delivered seq (mirrors server: always returned
+      // when page is non-empty, even on the last page, so future tombstones can be found).
+      const maxSeq = this.itemSyncSeq.get(page[page.length - 1]!.id) ?? 0;
+      return json(200, { items: page, next_cursor: String(maxSeq) });
     }
 
     if (url.pathname === "/api/v1/items" && method === "POST") {
