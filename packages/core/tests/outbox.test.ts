@@ -92,4 +92,34 @@ describe("Outbox", () => {
     expect(server.items.map((i) => i.body)).toEqual(["one", "two"]);
     expect(second.outbox.pending()).toEqual([]);
   });
+
+  it("halts on 401, accepts sends while halted, and resumes after re-auth", async () => {
+    const server = new FakeServer();
+    // Reject the first two creates with 401 to keep both items in queue
+    server.rejectNextCreateWith = { status: 401, code: "invalid_token" };
+    const storage = new MemoryStorage();
+    const { outbox, events } = makeOutbox(server, storage);
+    await outbox.load();
+
+    // Send item A → 401 halts, auth_required signals, A stays in queue
+    await outbox.send("text", "itemA");
+    await sleep(30);
+    expect(events).toContainEqual({ type: "auth_required" });
+    expect(outbox.pending()).toHaveLength(1);
+
+    // Set up rejection for the next create attempt (from send B's flush)
+    server.rejectNextCreateWith = { status: 401, code: "invalid_token" };
+
+    // Send item B → flush attempts itemA, gets 401 again, B joins queue
+    await outbox.send("text", "itemB");
+    await sleep(30);
+    expect(outbox.pending()).toHaveLength(2);
+
+    // Fix the token and flush → both delivered in order
+    await outbox.flush();
+    await sleep(30);
+
+    expect(server.items.map((i) => i.body)).toEqual(["itemA", "itemB"]);
+    expect(outbox.pending()).toEqual([]);
+  });
 });

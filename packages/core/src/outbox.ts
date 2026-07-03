@@ -27,6 +27,15 @@ export interface OutboxDeps {
   maxMs?: number;             // retry backoff cap, default 30000
 }
 
+/**
+ * Outbox: a persistent queue for clipboard items.
+ *
+ * On 401 the flush halts with one `auth_required` event and the queue is
+ * preserved. Flushing does not auto-resume — the consumer calls `flush()`
+ * after re-authenticating. A `send()` issued while halted persists the entry
+ * and may emit a further `auth_required` (each flush attempt against an
+ * invalid token signals once).
+ */
 export class Outbox {
   private entries: OutboxEntry[] = [];
   private flushing = false;
