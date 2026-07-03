@@ -18,6 +18,8 @@ from crossclipper.errors import register_error_handlers
 from crossclipper.items import router as items_router
 from crossclipper.items.repo import ItemRepo
 from crossclipper.protocol import version_ok
+from crossclipper.realtime import router as realtime_router
+from crossclipper.realtime.hub import Hub
 
 
 def _prune(engine, settings) -> None:
@@ -53,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     app.state.limiter = RateLimiter(max_events=10, window_seconds=60)
+    app.state.hub = Hub()
 
     if settings.cors_origin_list:
         app.add_middleware(
@@ -82,4 +85,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router.router, prefix="/api/v1")
     app.include_router(devices_router.router, prefix="/api/v1")
     app.include_router(items_router.router, prefix="/api/v1")
+    app.include_router(realtime_router.router, prefix="/api/v1")
     return app

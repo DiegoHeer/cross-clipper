@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from crossclipper.auth.deps import require_auth
@@ -24,6 +24,7 @@ async def list_devices(
 async def rename_device(
     device_id: str,
     payload: DeviceRenameIn,
+    request: Request,
     ctx: AuthContext = Depends(require_auth),
     session: Session = Depends(get_session),
 ) -> DeviceOut:
@@ -31,12 +32,16 @@ async def rename_device(
     device = repo.get(ctx.user_id, device_id)
     if device is None or device.revoked_at is not None:
         raise AppError(404, "not_found", "device not found")
-    return DeviceOut.model_validate(repo.rename(device, payload.name))
+    out = DeviceOut.model_validate(repo.rename(device, payload.name))
+    session.commit()
+    await request.app.state.hub.broadcast(ctx.user_id, {"type": "device_changed"})
+    return out
 
 
 @router.delete("/{device_id}", status_code=204)
 async def revoke_device(
     device_id: str,
+    request: Request,
     ctx: AuthContext = Depends(require_auth),
     session: Session = Depends(get_session),
 ) -> Response:
@@ -46,4 +51,8 @@ async def revoke_device(
         raise AppError(404, "not_found", "device not found")
     repo.revoke(device)
     TokenRepo(session).delete_for_device(device.id)
+    session.commit()
+    # Order: commit → close revoked socket → broadcast device_changed to the rest.
+    await request.app.state.hub.close_device(ctx.user_id, device_id)
+    await request.app.state.hub.broadcast(ctx.user_id, {"type": "device_changed"})
     return Response(status_code=204)

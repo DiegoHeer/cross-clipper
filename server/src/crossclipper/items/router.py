@@ -74,7 +74,12 @@ async def create_item(
             "id_conflict",
             "the supplied id is already in use; omit id to let the server mint one",
         )
-    return ItemOut.model_validate(item)
+    out = ItemOut.model_validate(item)
+    session.commit()
+    await request.app.state.hub.broadcast(
+        ctx.user_id, {"type": "item_new", "item": out.model_dump(mode="json")}
+    )
+    return out
 
 
 @router.get("", response_model=ItemsPage)
@@ -100,6 +105,7 @@ async def list_items(
 @router.delete("/{item_id}", status_code=204)
 async def delete_item(
     item_id: str,
+    request: Request,
     ctx: AuthContext = Depends(require_auth),
     session: Session = Depends(get_session),
 ) -> Response:
@@ -108,4 +114,8 @@ async def delete_item(
     if item is None:
         raise AppError(404, "not_found", "item not found")
     repo.soft_delete(item)
+    session.commit()
+    await request.app.state.hub.broadcast(
+        ctx.user_id, {"type": "item_deleted", "item_id": item_id}
+    )
     return Response(status_code=204)

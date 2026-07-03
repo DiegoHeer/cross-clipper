@@ -52,6 +52,8 @@ async def login(
     raw, token_hash = new_token()
     ttl = timedelta(days=request.app.state.settings.token_ttl_days)
     TokenRepo(session).create(user.id, device.id, token_hash, utcnow() + ttl)
+    session.commit()
+    await request.app.state.hub.broadcast(user.id, {"type": "device_changed"})
     return LoginOut(token=raw, device_id=device.id)
 
 
