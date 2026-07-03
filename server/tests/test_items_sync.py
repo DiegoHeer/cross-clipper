@@ -142,7 +142,7 @@ def test_tombstone_includes_target_device_id(client):
 def test_list_page_returns_target_device_id(client):
     """Amendment: target_device_id must be included in all GET /items payloads."""
     token, _ = register_and_login(client)
-    item = _post(client, token, "check-field")
+    _post(client, token, "check-field")
     r = client.get("/api/v1/items", headers=auth_headers(token))
     assert r.status_code == 200
     result = r.json()["items"][0]
