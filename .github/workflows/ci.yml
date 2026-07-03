@@ -37,6 +37,39 @@ jobs:
       - name: Test
         run: uv run pytest
 
+  core:
+    name: Core (typecheck + test + generated-types staleness)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck --workspace @crossclipper/core
+
+      - name: Test
+        run: npm run test --workspace @crossclipper/core
+
+      - name: Regenerate types from committed openapi.json
+        run: npm run generate --workspace @crossclipper/core
+
+      - name: Assert generated types are not stale
+        run: |
+          git diff --exit-code packages/core/src/generated/api.ts || {
+            echo "ERROR: packages/core/src/generated/api.ts is stale."
+            echo "Run 'npm run generate --workspace @crossclipper/core' locally and commit the result."
+            exit 1
+          }
+
   e2e:
     name: E2E journeys (Layer A)
     runs-on: ubuntu-latest
