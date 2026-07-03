@@ -220,11 +220,6 @@ def test_journey_item_lifecycle(server: ServerInfo) -> None:
 _WS_RECV_TIMEOUT = 5.0  # seconds — bounded receive; clear failure if exceeded
 
 
-async def _ws_connect(ws_url: str) -> websockets.ClientConnection:
-    """Open a WebSocket connection to the server."""
-    return await websockets.connect(ws_url)
-
-
 async def _recv_json(
     ws: websockets.ClientConnection, timeout: float = _WS_RECV_TIMEOUT
 ) -> dict:
@@ -255,16 +250,26 @@ def test_journey_live_events(server: ServerInfo) -> None:
         ws_url_b = f"ws://127.0.0.1:{port}/api/v1/ws?token={token_b}"
 
         async with websockets.connect(ws_url_b) as ws_b:
+            # Guard: confirm the server-side handler loop is running (hub.add precedes
+            # the receive loop) before firing any HTTP requests that trigger broadcasts.
+            await ws_b.send(json.dumps({"type": "ping"}))
+            _guard = await _recv_json(ws_b)
+            assert _guard == {"type": "pong"}, f"expected pong guard, got {_guard!r}"
+
             # 3a. A posts a targeted item (targeted at B so target_device_id is set)
-            r = httpx.post(
-                f"{base}/api/v1/items",
-                json={
-                    "kind": "text",
-                    "body": "live-event-test",
-                    "target_device_id": device_id_b,
-                },
-                headers=_headers(token_a),
-            )
+            # Run in a thread to avoid blocking the event loop (same pattern as journey 4).
+            def _post_item() -> httpx.Response:
+                return httpx.post(
+                    f"{base}/api/v1/items",
+                    json={
+                        "kind": "text",
+                        "body": "live-event-test",
+                        "target_device_id": device_id_b,
+                    },
+                    headers=_headers(token_a),
+                )
+
+            r = await asyncio.to_thread(_post_item)
             assert r.status_code == 201, f"post item failed: {r.text}"
             posted_item = r.json()
             item_id = posted_item["id"]
@@ -282,10 +287,13 @@ def test_journey_live_events(server: ServerInfo) -> None:
             )
 
             # 3c. A deletes the item → B receives `item_deleted`
-            r = httpx.delete(
-                f"{base}/api/v1/items/{item_id}",
-                headers=_headers(token_a),
-            )
+            def _delete_item() -> httpx.Response:
+                return httpx.delete(
+                    f"{base}/api/v1/items/{item_id}",
+                    headers=_headers(token_a),
+                )
+
+            r = await asyncio.to_thread(_delete_item)
             assert r.status_code == 204, f"delete item failed: {r.text}"
 
             event = await _recv_json(ws_b)
@@ -299,7 +307,9 @@ def test_journey_live_events(server: ServerInfo) -> None:
         # 3d. Cursor re-pull from B over HTTP sees the tombstone (cursor pulls include deleted)
         r = httpx.get(
             f"{base}/api/v1/items",
-            params={"cursor": "0" * 26},  # cursor before any item → full history
+            # "0"*26 is the lexicographic floor for ULIDs — sorts before any real id,
+            # so this cursor returns the full item history.
+            params={"cursor": "0" * 26},
             headers=_headers(token_b),
         )
         assert r.status_code == 200, f"cursor pull failed: {r.text}"
@@ -379,10 +389,15 @@ def test_journey_revocation_ws(server: ServerInfo) -> None:
             websockets.connect(ws_url_a) as ws_a,
             websockets.connect(ws_url_b) as ws_b,
         ):
-            # Verify A's connection works: ping → pong
+            # Guard: confirm both handler loops are running before triggering revocation.
+            # A pong proves hub.add completed, so broadcasts and close-kicks are reliable.
             await ws_a.send(json.dumps({"type": "ping"}))
             pong = await _recv_json(ws_a)
             assert pong == {"type": "pong"}, f"expected pong, got {pong!r}"
+
+            await ws_b.send(json.dumps({"type": "ping"}))
+            pong_b = await _recv_json(ws_b)
+            assert pong_b == {"type": "pong"}, f"expected pong for B, got {pong_b!r}"
 
             # Revoke device B (from A via HTTP) — run in a thread to avoid blocking the loop
             def _revoke() -> httpx.Response:
@@ -418,10 +433,10 @@ def test_journey_revocation_ws(server: ServerInfo) -> None:
             # Drain any pending broadcast events (e.g. device_changed) before sending ping
             await ws_a.send(json.dumps({"type": "ping"}))
             # Collect messages until we see a pong (skip intermediate broadcasts)
-            deadline = asyncio.get_event_loop().time() + _WS_RECV_TIMEOUT
+            deadline = asyncio.get_running_loop().time() + _WS_RECV_TIMEOUT
             pong2 = None
-            while asyncio.get_event_loop().time() < deadline:
-                remaining = deadline - asyncio.get_event_loop().time()
+            while asyncio.get_running_loop().time() < deadline:
+                remaining = deadline - asyncio.get_running_loop().time()
                 if remaining <= 0:
                     break
                 msg = await asyncio.wait_for(ws_a.recv(), timeout=remaining)
