@@ -36,7 +36,7 @@ async def revoke_device(device_id: str,
                         session: Session = Depends(get_session)) -> Response:
     repo = DeviceRepo(session)
     device = repo.get(ctx.user_id, device_id)
-    if device is None:
+    if device is None or device.revoked_at is not None:
         raise AppError(404, "not_found", "device not found")
     repo.revoke(device)
     TokenRepo(session).delete_for_device(device.id)
