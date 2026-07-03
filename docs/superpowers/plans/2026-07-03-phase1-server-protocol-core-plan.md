@@ -4158,3 +4158,13 @@ Approved (see docs/superpowers/specs/2026-07-03-e2e-testing-design.md). Constrai
 - **New PR "E2E-B" (after PR 6):** Schemathesis against the live server in base-URL mode, driven by the committed openapi.json; bounded example budget; no-5xx + schema conformance checks; CI job extension.
 - **Task 18 amended:** its server-kill/reconnect exit-criterion drill is absorbed into E2E-A journey 5; Task 18 retains only the thin CLI demo script.
 - Layer D (Docker smoke) is phase-2 scope, alongside Docker packaging.
+
+---
+
+# Amendment 2026-07-03 (3): sync_seq cursor (deletion-visibility fix)
+
+Approved by Diego after Task 15 surfaced the gap: tombstones keep the item's original ULID, so an id-based cursor never delivers deletions of already-synced items (spec §3/§4 amended accordingly).
+
+- **Server:** `Item` gains `sync_seq` (monotonic integer, indexed), assigned on create and RE-ASSIGNED on soft-delete. `GET /items` filters/orders by `sync_seq > :cursor`; `next_cursor` = highest delivered sync_seq (stringified). No-cursor initial pull unchanged (live items only, ordered by sync_seq). Contract regen required (snapshot + TS types). Tests must cover: delete-behind-cursor is delivered on next pull; re-delete idempotency unaffected; pruning unaffected.
+- **Task 15 (core):** FakeServer reverts to STRICT `>` semantics over sync_seq (mirroring the real server, incl. delete re-sequencing); the `>=` workaround is removed. Engine unchanged (cursor already opaque).
+- **Tasks 16–18:** cursor remains opaque; CLI prints it verbatim. E2E journeys must not construct cursors (zero-ULID floor replaced by cursor=0 or a recorded next_cursor).
