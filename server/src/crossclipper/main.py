@@ -11,6 +11,8 @@ from crossclipper import health
 from crossclipper.auth import router as auth_router
 from crossclipper.devices import router as devices_router
 from crossclipper.items import router as items_router
+from crossclipper.realtime import router as realtime_router
+from crossclipper.realtime.hub import Hub
 from crossclipper.auth.ratelimit import RateLimiter
 from crossclipper.config import Settings
 from crossclipper.db.models import utcnow
@@ -53,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     app.state.limiter = RateLimiter(max_events=10, window_seconds=60)
+    app.state.hub = Hub()
 
     if settings.cors_origin_list:
         app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list,
@@ -74,4 +77,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router.router, prefix="/api/v1")
     app.include_router(devices_router.router, prefix="/api/v1")
     app.include_router(items_router.router, prefix="/api/v1")
+    app.include_router(realtime_router.router, prefix="/api/v1")
     return app
