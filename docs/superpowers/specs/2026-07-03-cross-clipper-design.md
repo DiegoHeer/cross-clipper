@@ -24,7 +24,7 @@ A user self-hosts a single server (with attached storage), then connects clients
 
 ### Non-goals (explicit)
 
-- **Automatic clipboard capture on mobile.** iOS forbids background clipboard access; Android 10+ heavily restricts it. Mobile is manual-first (share sheet / in-app compose). Desktop and only desktop gets auto-capture.
+- **Passive clipboard watching — anywhere.** On mobile it's impossible (iOS forbids background clipboard access; Android 10+ heavily restricts it); on desktop it's deliberately rejected (amended 2026-07-03): silently syncing every Ctrl+C would ship 2FA codes and secrets before the user can think. Capture is always intentional: a dedicated global capture hotkey on desktop, share sheet / compose on mobile.
 - **End-to-end encryption (MVP).** Trust model is TLS in transit + you own the server (standard self-hosted posture). True E2EE would break server-side thumbnails and add key-management UX; it is a potential protocol v2, not a bolt-on. This is stated so nobody assumes E2EE exists.
 - **Cross-user messaging.** One user's devices talk to that user's feed. Multi-user means isolated accounts on one server, not user-to-user sends.
 - **Targeted per-device sends.** The feed is broadcast-to-all-my-devices; the device list is a view filter, not an address book. Threading/addressing machinery is deliberately excluded (YAGNI) — revisit only if cross-user messaging ever becomes a goal.
@@ -193,8 +193,9 @@ All four are React + `@crossclipper/core`, each ~"UI + platform glue," with the 
 
 ### Windows (Tauri + React)
 
-- The only client with real **auto-clipboard capture**: watches the OS clipboard and auto-posts new text (toggleable; per-app exclusions later).
-- System tray, global hotkey to open the feed, native notifications with a "copy" action.
+- **Hotkey capture** (amended 2026-07-03; replaces the earlier auto-watch idea): a dedicated global capture hotkey (configurable) sends the current clipboard to the feed, confirmed by a toast with a short undo window. No passive clipboard watching. Password-manager copies flagged with Windows' exclude-from-monitoring format are never captured.
+- Tray flyout for quick manual paste (and drag & drop of media/files in the media phase); full window for history, devices, settings.
+- System tray with master controls (capture on/off, pause), global hotkey to open the flyout, native notifications with a "copy" action.
 
 ### iOS + Android (React Native)
 
@@ -261,7 +262,7 @@ Each phase is its own spec → plan → implementation cycle and ends with somet
 
 1. **Server + protocol + `core`.** FastAPI MVP (auth, items, devices, WS), OpenAPI→TS codegen pipeline, sync engine in `core` with scenario tests. Usable via a throwaway CLI.
 2. **Browser extension** (reference client). First real UI; proves `core` on a real platform. Product becomes daily-usable across browsers/machines.
-3. **Windows (Tauri).** Tray, global hotkey, auto-clipboard watcher — the flagship "it just syncs" experience.
+3. **Windows (Tauri).** Tray + quick flyout + full window, capture hotkey with undo toast — the flagship "one keystroke and it's everywhere" experience.
 4. **React Native app.** Share sheet + feed; WS-only delivery at first.
 5. **Push delivery.** APNs/FCM wake relay (requires the Apple developer account), Android notification actions, UnifiedPush option.
 6. **Media phase.** Blob upload/download, thumbnails, attach UX. Protocol already reserved the slots.
@@ -271,4 +272,4 @@ Each phase is its own spec → plan → implementation cycle and ends with somet
 
 - Hosted push relay operational details (rate limits, abuse prevention) — decide in phase 5.
 - Feed retention policy for items themselves (keep forever vs. configurable cap) — default keep-forever in MVP; revisit if `/data` growth becomes a complaint.
-- Browser-extension auto-clipboard capture (Chrome offscreen-document tricks exist but are fragile) — explicitly out of MVP; desktop owns auto-capture.
+- Browser-extension clipboard capture (Chrome offscreen-document tricks exist but are fragile) — explicitly out of MVP; desktop owns capture via its hotkey.

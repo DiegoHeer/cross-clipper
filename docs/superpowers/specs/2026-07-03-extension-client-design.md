@@ -116,6 +116,6 @@ Per parent spec §9: the extension is thin, core logic is tested in `packages/co
 ## 10. Out of scope (this phase)
 
 - Media/blob rendering (thumbnails, downloads) — protocol slots exist; UI comes with the media phase.
-- Auto-clipboard capture in the browser — explicitly out per parent spec §11; desktop owns auto-capture.
+- Clipboard capture in the browser — explicitly out per parent spec §11; desktop owns capture via its global hotkey.
 - Firefox-for-Android — desktop browsers only for now.
 - Store publication (listing assets, review process) — handled when Phase 2 ships; development uses unpacked loading.
