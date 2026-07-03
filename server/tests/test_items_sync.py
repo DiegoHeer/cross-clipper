@@ -24,14 +24,15 @@ def test_cursor_pagination_walks_the_feed_in_id_order(client):
     r = client.get("/api/v1/items?limit=2", headers=auth_headers(token))
     page = r.json()
     assert [i["id"] for i in page["items"]] == ids[:2]
-    assert page["next_cursor"] == ids[1]
+    # next_cursor is now the sync_seq of the last delivered item (opaque integer
+    # string), not the item ULID — just assert it is non-None and use it.
+    assert page["next_cursor"] is not None
 
     r = client.get(
         f"/api/v1/items?cursor={page['next_cursor']}", headers=auth_headers(token)
     )
     page2 = r.json()
     assert [i["id"] for i in page2["items"]] == [ids[2]]
-    assert page2["next_cursor"] is None
 
 
 def test_origin_filter(client):
@@ -58,13 +59,16 @@ def test_delete_produces_tombstone_visible_only_with_cursor(client):
         == 204
     )
 
-    # cold start (no cursor): tombstone hidden
+    # cold start (no cursor): tombstone hidden; only live item (first) appears
     cold = client.get("/api/v1/items", headers=auth_headers(token)).json()
     assert [i["id"] for i in cold["items"]] == [first["id"]]
+    # Record next_cursor from the cold pull (sync_seq of first, the only live item)
+    cursor_after_first = cold["next_cursor"]
+    assert cursor_after_first is not None
 
-    # incremental sync (with cursor): tombstone delivered, body scrubbed
+    # incremental sync (with cursor past first): tombstone delivered, body scrubbed
     warm = client.get(
-        f"/api/v1/items?cursor={first['id']}", headers=auth_headers(token)
+        f"/api/v1/items?cursor={cursor_after_first}", headers=auth_headers(token)
     ).json()
     assert len(warm["items"]) == 1
     stone = warm["items"][0]
@@ -131,10 +135,8 @@ def test_tombstone_includes_target_device_id(client):
     )
     # Cold fetch: gone (no cursor, tombstone hidden)
     # Warm fetch: tombstone returned with target_device_id (null here, but field present)
-    # Use zero-ULID cursor (before all items) to retrieve tombstone in incremental sync
-    warm = client.get(
-        "/api/v1/items?cursor=00000000000000000000000000", headers=auth_headers(token)
-    ).json()
+    # cursor=0 is the integer floor — sync_seq starts at 1, so this returns everything
+    warm = client.get("/api/v1/items?cursor=0", headers=auth_headers(token)).json()
     tombstone = next(i for i in warm["items"] if i["id"] == item["id"])
     assert "target_device_id" in tombstone
 
@@ -168,10 +170,60 @@ def test_origin_filter_nonexistent_device(client):
 
 
 def test_malformed_cursor_does_not_500(client):
-    """Malformed cursor (non-ULID) is compared lexicographically; accepted behavior is
-    200 with an empty list (cursor sorts after all real ULIDs or matches nothing)."""
+    """Malformed cursor (non-integer) must not 500 — treated as 0 (deliver everything)."""
     token, _ = register_and_login(client)
     _post(client, token, "some-item")
-    r = client.get("/api/v1/items?cursor=not-a-ulid!!!", headers=auth_headers(token))
+    r = client.get("/api/v1/items?cursor=not-a-number!!!", headers=auth_headers(token))
     assert r.status_code == 200  # must not 500
     assert isinstance(r.json()["items"], list)
+
+
+def test_delete_behind_cursor_delivers_tombstone(client):
+    """Regression: delete-behind-cursor bug.
+
+    Client pulls 3 items via limit=2 pages, recording cursor after page 1
+    (which covers items x and y).  Item x is then deleted; its sync_seq is
+    re-assigned beyond cursor1.  A re-pull from cursor1 MUST deliver x's
+    tombstone even though x was already delivered before cursor1 was recorded.
+
+    This test FAILS against the ULID-cursor implementation (the bug).
+    """
+    token, _ = register_and_login(client)
+
+    # Post three items so limit=2 produces a meaningful next_cursor
+    item_x = _post(client, token, "item-x")
+    _post(client, token, "item-y")
+    item_z = _post(client, token, "item-z")
+
+    # Page 1: limit=2 delivers x and y; cursor1 points past y's sync_seq
+    page1 = client.get("/api/v1/items?limit=2", headers=auth_headers(token)).json()
+    assert len(page1["items"]) == 2
+    cursor1 = page1["next_cursor"]
+    assert cursor1 is not None, "expected next_cursor when more items exist"
+
+    # Page 2: delivers z (client has now seen all items and holds cursor1)
+    page2 = client.get(
+        f"/api/v1/items?limit=2&cursor={cursor1}", headers=auth_headers(token)
+    ).json()
+    assert any(i["id"] == item_z["id"] for i in page2["items"])
+
+    # Now delete item-x — sync_seq is re-assigned beyond cursor1
+    assert (
+        client.delete(
+            f"/api/v1/items/{item_x['id']}", headers=auth_headers(token)
+        ).status_code
+        == 204
+    )
+
+    # Incremental pull from cursor1 MUST deliver x's tombstone
+    warm = client.get(
+        f"/api/v1/items?cursor={cursor1}", headers=auth_headers(token)
+    ).json()
+    tombstone_ids = [i["id"] for i in warm["items"]]
+    assert item_x["id"] in tombstone_ids, (
+        f"tombstone for {item_x['id']} not delivered after delete-behind-cursor; "
+        f"got {tombstone_ids!r}"
+    )
+    tombstone = next(i for i in warm["items"] if i["id"] == item_x["id"])
+    assert tombstone["deleted_at"] is not None
+    assert tombstone["body"] == ""

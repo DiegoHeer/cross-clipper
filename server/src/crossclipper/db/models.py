@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -38,6 +38,8 @@ class Device(Base):
 
 class Item(Base):
     __tablename__ = "items"
+    __table_args__ = (Index("ix_items_user_sync_seq", "user_id", "sync_seq"),)
+
     id: Mapped[str] = mapped_column(String(26), primary_key=True)  # ULID
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     origin_device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"))
@@ -49,6 +51,12 @@ class Item(Base):
     blob_id: Mapped[str | None] = mapped_column(ForeignKey("blobs.id"), default=None)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(default=None, index=True)
+    # Monotonic modification sequence — assigned on create and RE-ASSIGNED on
+    # soft-delete so tombstones always move ahead of any existing client cursor.
+    # max(sync_seq)+1 within the write transaction is safe for SQLite's
+    # single-writer model (WAL mode or serialized writes via the same connection
+    # pool ensure no two concurrent transactions can race on the same user's rows).
+    sync_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class Blob(Base):

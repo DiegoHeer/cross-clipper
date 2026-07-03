@@ -307,9 +307,9 @@ def test_journey_live_events(server: ServerInfo) -> None:
         # 3d. Cursor re-pull from B over HTTP sees the tombstone (cursor pulls include deleted)
         r = httpx.get(
             f"{base}/api/v1/items",
-            # "0"*26 is the lexicographic floor for ULIDs — sorts before any real id,
-            # so this cursor returns the full item history.
-            params={"cursor": "0" * 26},
+            # cursor="0" is the integer floor — sync_seq starts at 1, so this
+            # returns the full modification history including tombstones.
+            params={"cursor": "0"},
             headers=_headers(token_b),
         )
         assert r.status_code == 200, f"cursor pull failed: {r.text}"
@@ -487,12 +487,14 @@ def test_journey_server_kill_recovery(restart_server: ServerInfo) -> None:
         assert r.status_code == 201, r.text
         item_ids.append(r.json()["id"])
 
-    # Pull with cursor=None to get all items and record the last cursor
+    # Pull with cursor=None to get all items and record the cursor
     r = httpx.get(f"{base}/api/v1/items", headers=_headers(token))
     assert r.status_code == 200, r.text
     first_page = r.json()
     assert len(first_page["items"]) == 3
-    cursor = first_page["items"][-1]["id"]
+    # Use next_cursor (opaque sync_seq string) rather than a ULID item id
+    cursor = first_page["next_cursor"]
+    assert cursor is not None, "expected next_cursor after pulling 3 items"
 
     # Kill the server (SIGTERM, then wait)
     _stop_server(proc)
