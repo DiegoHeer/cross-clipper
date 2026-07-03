@@ -15,3 +15,6 @@ node_modules/
 # Local runtime data
 data/
 *.sqlite
+
+# Subagent scratch reports (worktree root)
+.superpowers-*.md

@@ -110,8 +110,9 @@ AuthToken { id, user_id, device_id, token_hash, expires_at, created_at }
 Deliberate choices:
 
 - **`user_id` on everything from day one.** Single-user MVP, but multi-user isolation later is a registration-toggle flip, not a migration.
-- **ULIDs for item IDs.** Lexicographically sortable by creation time: feed ordering and sync cursors are `WHERE id > :cursor ORDER BY id`. No separate sequence column.
-- **Soft delete with tombstones.** Deletions must sync; clients need to hear "item X is gone." `deleted_at` marks tombstones; the server prunes them after a retention window (default 30 days, configurable).
+- **ULIDs for item IDs.** Lexicographically sortable by creation time; the item id is the item's permanent identity. Feed display ordering uses it.
+- **Sync cursor over a modification sequence, not the id** *(amended 2026-07-03)*. Each item carries a monotonic `sync_seq`, assigned on create and **re-assigned on delete**; the sync pull is `WHERE sync_seq > :cursor ORDER BY sync_seq`, and `next_cursor` returns the highest delivered `sync_seq`. Rationale: tombstones keep the item's original id, so an id-based cursor can never deliver a deletion of an already-synced item — the tombstone sorts behind the cursor and the deletion becomes invisible to the recovery path. Re-sequencing on delete moves the tombstone ahead of every existing cursor. **Clients treat the cursor as an opaque token** (echo `next_cursor` back verbatim) — they must never parse or construct one.
+- **Soft delete with tombstones.** Deletions must sync; clients need to hear "item X is gone." `deleted_at` marks tombstones (and bumps `sync_seq`, see above); the server prunes them after a retention window (default 30 days, configurable).
 - **`kind` future-proofed now.** `image`/`file` are defined in the enum from day one; clients render unknown kinds as a graceful "unsupported item — update client" fallback, so adding media later doesn't break old clients.
 - **`Blob` table exists day one, unused until the media phase.** The protocol slot (`blob_id`) is reserved so media is additive.
 - **One token per device.** Revoking a device kills exactly that device's access. The UI device list is literally the `Device` table.
@@ -154,7 +155,7 @@ client → server:  { type: "ping" }   (keepalive)
 
 ### Sync model: pull-based with live nudges
 
-The single most important reliability decision. The source of truth for catching up is always `GET /items?cursor=<last-seen ULID>`. On connect/reconnect, a client pulls everything after its cursor, then trusts WS events for real-time. If the WS hiccups, or a push wakes a backgrounded app, the recovery path is the same pull. One code path — implemented once in `packages/core` — covers cold start, reconnect, and push-wake. There is no state-machine edge where a missed WS event loses data.
+The single most important reliability decision. The source of truth for catching up is always `GET /items?cursor=<opaque cursor from the last pull's next_cursor>`. On connect/reconnect, a client pulls everything after its cursor, then trusts WS events for real-time. If the WS hiccups, or a push wakes a backgrounded app, the recovery path is the same pull. One code path — implemented once in `packages/core` — covers cold start, reconnect, and push-wake. There is no state-machine edge where a missed WS event loses data — including deletions: because deleting re-sequences the tombstone (§3), a catch-up pull always delivers tombstones for items deleted behind the client's cursor.
 
 ### Push payloads carry no content
 
