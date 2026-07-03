@@ -1,0 +1,40 @@
+name: Contract fuzz (Schemathesis)
+
+on:
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'packages/core/openapi.json'
+      - '.github/workflows/fuzz.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'server/**'
+      - 'packages/core/openapi.json'
+      - '.github/workflows/fuzz.yml'
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Contract fuzz (Schemathesis)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Fuzz tests
+        run: uv run pytest -m fuzz tests_e2e/
