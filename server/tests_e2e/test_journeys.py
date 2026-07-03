@@ -5,19 +5,22 @@ Each journey is a single test function so pytest -m e2e gives clear per-journey
 pass/fail output.
 
 Journey 1 uses a function-scoped `first_run_server` (fresh, empty data dir) so
-it can genuinely test the first-run registration flow.  Journeys 2 and 4 use
+it can genuinely test the first-run registration flow.  Journeys 2, 3, and 4 use
 the session-scoped `server`; the session-scoped `_ensure_session_user` autouse
 fixture registers the shared user before any test runs, making those journeys
 independently executable.
 
-Journey 3 (live WS events) arrives with the WS journeys (later PR).
 Journey 5 uses its own function-scoped `restart_server` to safely kill-and-restart.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 import httpx
 import pytest
+import websockets
 
 from tests_e2e.conftest import (
     _SESSION_EMAIL as _EMAIL,
@@ -211,18 +214,116 @@ def test_journey_item_lifecycle(server: ServerInfo) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Journey 4 — Revocation (REST half)
-# TODO: WS-close half arrives with the WS journeys (later PR).
+# Journey 3 — Live WS events
+# ---------------------------------------------------------------------------
+
+_WS_RECV_TIMEOUT = 5.0  # seconds — bounded receive; clear failure if exceeded
+
+
+async def _ws_connect(ws_url: str) -> websockets.ClientConnection:
+    """Open a WebSocket connection to the server."""
+    return await websockets.connect(ws_url)
+
+
+async def _recv_json(
+    ws: websockets.ClientConnection, timeout: float = _WS_RECV_TIMEOUT
+) -> dict:
+    """Receive one JSON message; raises TimeoutError if nothing arrives in time."""
+    raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
+    return json.loads(raw)
+
+
+@pytest.mark.e2e
+def test_journey_live_events(server: ServerInfo) -> None:
+    """
+    Journey 3 — Live WS events.
+
+    Device B holds an open WS connection.
+    Device A posts an item → B receives `item_new` with the full item incl. target_device_id.
+    Device A deletes the item → B receives `item_deleted` with the item_id.
+    A cursor re-pull over HTTP from B sees the tombstone.
+    """
+
+    async def _run() -> None:
+        base = server.base_url
+        port = server.port
+
+        # Login as two fresh devices for this journey
+        token_a, device_id_a = _login(base, "J3-Device-A")
+        token_b, device_id_b = _login(base, "J3-Device-B")
+
+        ws_url_b = f"ws://127.0.0.1:{port}/api/v1/ws?token={token_b}"
+
+        async with websockets.connect(ws_url_b) as ws_b:
+            # 3a. A posts a targeted item (targeted at B so target_device_id is set)
+            r = httpx.post(
+                f"{base}/api/v1/items",
+                json={
+                    "kind": "text",
+                    "body": "live-event-test",
+                    "target_device_id": device_id_b,
+                },
+                headers=_headers(token_a),
+            )
+            assert r.status_code == 201, f"post item failed: {r.text}"
+            posted_item = r.json()
+            item_id = posted_item["id"]
+
+            # 3b. B receives `item_new` with full item
+            event = await _recv_json(ws_b)
+            assert event["type"] == "item_new", f"expected item_new, got {event!r}"
+            received_item = event["item"]
+            assert received_item["id"] == item_id, (
+                f"item id mismatch: expected {item_id}, got {received_item['id']}"
+            )
+            assert received_item["body"] == "live-event-test"
+            assert received_item["target_device_id"] == device_id_b, (
+                f"expected target_device_id={device_id_b}, got {received_item['target_device_id']}"
+            )
+
+            # 3c. A deletes the item → B receives `item_deleted`
+            r = httpx.delete(
+                f"{base}/api/v1/items/{item_id}",
+                headers=_headers(token_a),
+            )
+            assert r.status_code == 204, f"delete item failed: {r.text}"
+
+            event = await _recv_json(ws_b)
+            assert event["type"] == "item_deleted", (
+                f"expected item_deleted, got {event!r}"
+            )
+            assert event["item_id"] == item_id, (
+                f"item_id mismatch: expected {item_id}, got {event['item_id']}"
+            )
+
+        # 3d. Cursor re-pull from B over HTTP sees the tombstone (cursor pulls include deleted)
+        r = httpx.get(
+            f"{base}/api/v1/items",
+            params={"cursor": "0" * 26},  # cursor before any item → full history
+            headers=_headers(token_b),
+        )
+        assert r.status_code == 200, f"cursor pull failed: {r.text}"
+        page = r.json()
+        tombstoned = next((i for i in page["items"] if i["id"] == item_id), None)
+        assert tombstoned is not None, (
+            f"tombstone for {item_id} not found in cursor pull"
+        )
+        assert tombstoned["deleted_at"] is not None, (
+            f"expected deleted_at set on tombstone, got {tombstoned['deleted_at']!r}"
+        )
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# Journey 4 — Revocation (REST + WS)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.e2e
 def test_journey_revocation_rest(server: ServerInfo) -> None:
     """
-    Revoke device B → B's REST requests return 401 → A is unaffected.
-
-    WS-close half: TODO — verify B's open WS connection is closed on revocation.
-    This will be added in the WS journeys PR.
+    Journey 4 (REST half) — Revoke device B → B's REST requests return 401 → A is unaffected.
     """
     base = server.base_url
 
@@ -254,6 +355,85 @@ def test_journey_revocation_rest(server: ServerInfo) -> None:
     assert r.status_code == 200, (
         f"device A affected after B revocation: {r.status_code}"
     )
+
+
+@pytest.mark.e2e
+def test_journey_revocation_ws(server: ServerInfo) -> None:
+    """
+    Journey 4 (WS half) — B holds an open WS connection → revoke B → B's socket
+    closes with code 4401 → A's WS still works (ping/pong).
+    """
+
+    async def _run() -> None:
+        base = server.base_url
+        port = server.port
+
+        # Login as two fresh devices for this journey
+        token_a, device_id_a = _login(base, "J4WS-Device-A")
+        token_b, device_id_b = _login(base, "J4WS-Device-B")
+
+        ws_url_a = f"ws://127.0.0.1:{port}/api/v1/ws?token={token_a}"
+        ws_url_b = f"ws://127.0.0.1:{port}/api/v1/ws?token={token_b}"
+
+        async with (
+            websockets.connect(ws_url_a) as ws_a,
+            websockets.connect(ws_url_b) as ws_b,
+        ):
+            # Verify A's connection works: ping → pong
+            await ws_a.send(json.dumps({"type": "ping"}))
+            pong = await _recv_json(ws_a)
+            assert pong == {"type": "pong"}, f"expected pong, got {pong!r}"
+
+            # Revoke device B (from A via HTTP) — run in a thread to avoid blocking the loop
+            def _revoke() -> httpx.Response:
+                return httpx.delete(
+                    f"{base}/api/v1/devices/{device_id_b}",
+                    headers=_headers(token_a),
+                )
+
+            r = await asyncio.to_thread(_revoke)
+            assert r.status_code == 204, f"revoke failed: {r.status_code} {r.text}"
+
+            # B's socket must close with code 4401
+            try:
+                # Drain until closed; any message before close is fine
+                while True:
+                    await asyncio.wait_for(ws_b.recv(), timeout=_WS_RECV_TIMEOUT)
+            except websockets.exceptions.ConnectionClosedError as exc:
+                assert exc.rcvd is not None and exc.rcvd.code == 4401, (
+                    f"expected close code 4401, got {exc.rcvd!r}"
+                )
+            except websockets.exceptions.ConnectionClosedOK as exc:
+                # Server may close with OK if it can't send close frames for custom codes
+                # on some WS implementations — but we specifically test for 4401
+                raise AssertionError(
+                    f"expected close code 4401, got ConnectionClosedOK: {exc.rcvd!r}"
+                )
+            except asyncio.TimeoutError:
+                raise AssertionError(
+                    "B's WS was not closed within timeout after revocation"
+                )
+
+            # A's connection is still alive — ping → pong
+            # Drain any pending broadcast events (e.g. device_changed) before sending ping
+            await ws_a.send(json.dumps({"type": "ping"}))
+            # Collect messages until we see a pong (skip intermediate broadcasts)
+            deadline = asyncio.get_event_loop().time() + _WS_RECV_TIMEOUT
+            pong2 = None
+            while asyncio.get_event_loop().time() < deadline:
+                remaining = deadline - asyncio.get_event_loop().time()
+                if remaining <= 0:
+                    break
+                msg = await asyncio.wait_for(ws_a.recv(), timeout=remaining)
+                parsed = json.loads(msg)
+                if parsed.get("type") == "pong":
+                    pong2 = parsed
+                    break
+            assert pong2 == {"type": "pong"}, (
+                f"A's WS broken after B revocation: expected pong, got {pong2!r}"
+            )
+
+    asyncio.run(_run())
 
 
 # ---------------------------------------------------------------------------
