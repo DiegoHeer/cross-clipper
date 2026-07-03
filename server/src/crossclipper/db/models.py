@@ -26,7 +26,9 @@ class Device(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
-    platform: Mapped[str] = mapped_column(String(16))  # ios|android|windows|extension|other
+    platform: Mapped[str] = mapped_column(
+        String(16)
+    )  # ios|android|windows|extension|other
     push_token: Mapped[str | None] = mapped_column(String(512), default=None)
     push_transport: Mapped[str | None] = mapped_column(String(16), default=None)
     last_seen_at: Mapped[datetime] = mapped_column(default=utcnow)
@@ -39,7 +41,9 @@ class Item(Base):
     id: Mapped[str] = mapped_column(String(26), primary_key=True)  # ULID
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     origin_device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"))
-    target_device_id: Mapped[str | None] = mapped_column(ForeignKey("devices.id"), default=None)
+    target_device_id: Mapped[str | None] = mapped_column(
+        ForeignKey("devices.id"), default=None
+    )
     kind: Mapped[str] = mapped_column(String(8))  # text|link|image|file
     body: Mapped[str] = mapped_column(Text)
     blob_id: Mapped[str | None] = mapped_column(ForeignKey("blobs.id"), default=None)

@@ -16,13 +16,17 @@ class AppError(Exception):
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError) -> JSONResponse:
-        return JSONResponse(status_code=exc.status,
-                            content={"code": exc.code, "message": exc.message})
+        return JSONResponse(
+            status_code=exc.status, content={"code": exc.code, "message": exc.message}
+        )
 
     @app.exception_handler(RequestValidationError)
-    async def _validation(request: Request, exc: RequestValidationError) -> JSONResponse:
+    async def _validation(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
         message = "; ".join(
             f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()
         )
-        return JSONResponse(status_code=422,
-                            content={"code": "validation_error", "message": message})
+        return JSONResponse(
+            status_code=422, content={"code": "validation_error", "message": message}
+        )

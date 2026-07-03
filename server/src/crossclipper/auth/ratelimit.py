@@ -6,8 +6,12 @@ from collections.abc import Callable
 class RateLimiter:
     """In-memory sliding window. Per-process is fine: one server process (§2)."""
 
-    def __init__(self, max_events: int, window_seconds: float,
-                 now: Callable[[], float] = time.monotonic):
+    def __init__(
+        self,
+        max_events: int,
+        window_seconds: float,
+        now: Callable[[], float] = time.monotonic,
+    ):
         self.max_events = max_events
         self.window = window_seconds
         self._now = now

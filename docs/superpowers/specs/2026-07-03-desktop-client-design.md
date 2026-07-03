@@ -29,7 +29,7 @@ Small window anchored near the tray, closes on focus loss:
 
 - Header: app name + "Open full app ↗"
 - Last ~5 feed items as compact cards (copy is the primary action)
-- Compose box (paste + Enter)
+- Compose box (paste + Enter) with the standard target picker (device chips, default "Silent" — parent spec §4 notification policy)
 - Drop zone: "⇣ drop files or images here" — dashed target, disabled with a "(media phase)" hint until blobs ship
 
 ### Full window
@@ -52,7 +52,7 @@ On Ctrl+Alt+C:
 
 1. Read the clipboard (Rust side).
 2. **Sensitive-content guard:** if the clipboard carries the Windows `ExcludeClipboardContentFromMonitoringProcessing` format (set by password managers), show a "not captured — marked sensitive" toast and stop. Not configurable.
-3. Text present → normalize (trim trailing whitespace), classify `text` vs `link` (single URL ⇒ `link`), enforce the 256 KB cap client-side, hand to core's outbox (ULID idempotency, retry) → toast with Undo on ack, "queued — offline" toast when the outbox can't deliver yet.
+3. Text present → normalize (trim trailing whitespace), classify `text` vs `link` (single URL ⇒ `link`), enforce the 256 KB cap client-side, hand to core's outbox (ULID idempotency, retry) → toast with Undo on ack, "queued — offline" toast when the outbox can't deliver yet. Hotkey captures are always **untargeted** (silent sync; no picker UI on the speed path) — targeting is available in the flyout compose.
 4. Non-text clipboard (image/files) → "images & files come in a later version" toast (media phase flips this to blob upload).
 5. Empty clipboard → gentle "clipboard is empty" toast.
 

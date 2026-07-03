@@ -15,6 +15,7 @@ async def health(request: Request):
         probe.write_text("ok")
         probe.unlink()
     except Exception as exc:  # noqa: BLE001 — health must never 500
-        return JSONResponse(status_code=503,
-                            content={"code": "unhealthy", "message": str(exc)})
+        return JSONResponse(
+            status_code=503, content={"code": "unhealthy", "message": str(exc)}
+        )
     return {"status": "ok"}

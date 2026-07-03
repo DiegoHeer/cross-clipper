@@ -177,9 +177,7 @@ def test_cross_user_ulid_collision_returns_422(multi_user_client):
     # Must not leak alice's item content
     assert "alice-content" not in str(r_b.json())
 
-    # User A's item is unchanged
-    _r_check = c.get(f"/api/v1/items/{shared_id}", headers=auth_headers(token_a))
-    # GET not yet implemented — verify via creating again (idempotent replay)
+    # User A's item is unchanged — verify via idempotent replay (no GET-by-id endpoint)
     r_replay = c.post(
         "/api/v1/items",
         json={"kind": "text", "body": "alice-content", "id": shared_id},

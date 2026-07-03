@@ -18,12 +18,15 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", status_code=201, response_model=RegisterOut)
-async def register(payload: RegisterIn, request: Request,
-                   session: Session = Depends(get_session)) -> RegisterOut:
+async def register(
+    payload: RegisterIn, request: Request, session: Session = Depends(get_session)
+) -> RegisterOut:
     rate_limit(request, "register")
     repo = UserRepo(session)
     if repo.count() > 0 and not request.app.state.settings.allow_registration:
-        raise AppError(403, "registration_closed", "registration is closed on this server")
+        raise AppError(
+            403, "registration_closed", "registration is closed on this server"
+        )
     if repo.get_by_email(payload.email) is not None:
         raise AppError(409, "email_taken", "a user with this email already exists")
     try:
@@ -34,13 +37,18 @@ async def register(payload: RegisterIn, request: Request,
 
 
 @router.post("/login", response_model=LoginOut)
-async def login(payload: LoginIn, request: Request,
-                session: Session = Depends(get_session)) -> LoginOut:
+async def login(
+    payload: LoginIn, request: Request, session: Session = Depends(get_session)
+) -> LoginOut:
     rate_limit(request, "login")
     user = UserRepo(session).get_by_email(payload.email)
-    if user is None or not service.verify_password(payload.password, user.password_hash):
+    if user is None or not service.verify_password(
+        payload.password, user.password_hash
+    ):
         raise AppError(401, "invalid_credentials", "email or password is incorrect")
-    device = DeviceRepo(session).create(user.id, payload.device_name, payload.platform.value)
+    device = DeviceRepo(session).create(
+        user.id, payload.device_name, payload.platform.value
+    )
     raw, token_hash = new_token()
     ttl = timedelta(days=request.app.state.settings.token_ttl_days)
     TokenRepo(session).create(user.id, device.id, token_hash, utcnow() + ttl)
