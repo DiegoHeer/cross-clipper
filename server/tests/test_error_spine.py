@@ -1,7 +1,6 @@
 """Tests for the framework-level error spine (404/405/500 handlers)."""
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from crossclipper.config import Settings

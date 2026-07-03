@@ -6,10 +6,10 @@ the standard {code, message} error shape.
 """
 
 import pytest
+from fastapi.testclient import TestClient
 
 from crossclipper.config import Settings
 from crossclipper.main import create_app
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -38,16 +38,12 @@ def test_missing_authorization_header_is_401(client):
 
 def test_basic_scheme_is_rejected_as_401(client):
     """Authorization: Basic xyz must be rejected — only Bearer is accepted."""
-    _assert_invalid_token_401(
-        client.get(PROBE, headers={"Authorization": "Basic xyz"})
-    )
+    _assert_invalid_token_401(client.get(PROBE, headers={"Authorization": "Basic xyz"}))
 
 
 def test_bare_bearer_without_token_is_401(client):
     """Authorization: Bearer with no token part must be rejected."""
-    _assert_invalid_token_401(
-        client.get(PROBE, headers={"Authorization": "Bearer"})
-    )
+    _assert_invalid_token_401(client.get(PROBE, headers={"Authorization": "Bearer"}))
 
 
 def test_bearer_case_insensitive_accepted_when_token_valid(tmp_path):

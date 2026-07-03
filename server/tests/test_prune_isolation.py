@@ -2,8 +2,6 @@
 
 import logging
 
-import pytest
-
 from crossclipper.main import _safe_prune
 
 
@@ -30,4 +28,7 @@ def test_safe_prune_logs_on_exception_and_does_not_reraise(caplog):
         _safe_prune(exploding_prune)
 
     # Exception must have been logged
-    assert any("db blew up" in r.message or "db blew up" in str(r.exc_info) for r in caplog.records)
+    assert any(
+        "db blew up" in r.message or "db blew up" in str(r.exc_info)
+        for r in caplog.records
+    )
