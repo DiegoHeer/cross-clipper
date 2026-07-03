@@ -1,2 +1,5 @@
 # Brainstorming companion sessions
 .superpowers/
+
+# Git worktrees for isolated implementation work
+.worktrees/
