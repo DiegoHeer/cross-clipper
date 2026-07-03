@@ -4,10 +4,10 @@ from fastapi.responses import JSONResponse
 
 from crossclipper import health
 from crossclipper.auth import router as auth_router
-from crossclipper.devices import router as devices_router
 from crossclipper.auth.ratelimit import RateLimiter
 from crossclipper.config import Settings
 from crossclipper.db.session import init_db, make_engine
+from crossclipper.devices import router as devices_router
 from crossclipper.errors import register_error_handlers
 from crossclipper.protocol import version_ok
 
@@ -26,8 +26,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.limiter = RateLimiter(max_events=10, window_seconds=60)
 
     if settings.cors_origin_list:
-        app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list,
-                           allow_methods=["*"], allow_headers=["*"])
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origin_list,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     register_error_handlers(app)
 
@@ -36,9 +40,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version = request.headers.get("x-client-version")
         minimum = request.app.state.settings.min_client_version
         if version and not version_ok(version, minimum):
-            return JSONResponse(status_code=426, content={
-                "code": "client_too_old",
-                "message": f"minimum supported client version is {minimum}"})
+            return JSONResponse(
+                status_code=426,
+                content={
+                    "code": "client_too_old",
+                    "message": f"minimum supported client version is {minimum}",
+                },
+            )
         return await call_next(request)
 
     app.include_router(health.router)

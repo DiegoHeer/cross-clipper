@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from crossclipper.config import Settings
 
 
@@ -17,8 +15,11 @@ def test_settings_read_cc_env_vars(monkeypatch, tmp_path):
 
 
 def test_settings_derived_paths_and_cors(tmp_path):
-    s = Settings(secret_key="x", data_dir=tmp_path,
-                 cors_origins="chrome-extension://abc, https://foo.example")
+    s = Settings(
+        secret_key="x",
+        data_dir=tmp_path,
+        cors_origins="chrome-extension://abc, https://foo.example",
+    )
     assert s.blobs_dir == tmp_path / "blobs"
     assert s.database_url == f"sqlite:///{tmp_path / 'db.sqlite'}"
     assert s.cors_origin_list == ["chrome-extension://abc", "https://foo.example"]

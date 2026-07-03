@@ -1,5 +1,6 @@
-from crossclipper.auth.ratelimit import RateLimiter
 from helpers import register_and_login
+
+from crossclipper.auth.ratelimit import RateLimiter
 
 
 def test_rate_limiter_sliding_window():
@@ -14,8 +15,12 @@ def test_rate_limiter_sliding_window():
 
 def test_login_rate_limited_after_10_attempts(client):
     register_and_login(client)  # 1 successful login consumes 1 slot
-    bad = {"email": "me@example.com", "password": "wrong-password",
-           "device_name": "d", "platform": "other"}
+    bad = {
+        "email": "me@example.com",
+        "password": "wrong-password",
+        "device_name": "d",
+        "platform": "other",
+    }
     for _ in range(9):
         assert client.post("/api/v1/auth/login", json=bad).status_code == 401
     r = client.post("/api/v1/auth/login", json=bad)

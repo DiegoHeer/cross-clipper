@@ -23,9 +23,11 @@ class DeviceRepo:
         return device
 
     def list_active(self, user_id: str) -> list[Device]:
-        stmt = (select(Device)
-                .where(Device.user_id == user_id, Device.revoked_at.is_(None))
-                .order_by(Device.created_at))
+        stmt = (
+            select(Device)
+            .where(Device.user_id == user_id, Device.revoked_at.is_(None))
+            .order_by(Device.created_at)
+        )
         return list(self.session.scalars(stmt))
 
     def rename(self, device: Device, name: str) -> Device:

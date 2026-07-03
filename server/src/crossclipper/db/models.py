@@ -26,7 +26,9 @@ class Device(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
-    platform: Mapped[str] = mapped_column(String(16))  # ios|android|windows|extension|other
+    platform: Mapped[str] = mapped_column(
+        String(16)
+    )  # ios|android|windows|extension|other
     push_token: Mapped[str | None] = mapped_column(String(512), default=None)
     push_transport: Mapped[str | None] = mapped_column(String(16), default=None)
     last_seen_at: Mapped[datetime] = mapped_column(default=utcnow)

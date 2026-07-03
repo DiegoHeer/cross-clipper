@@ -1,5 +1,4 @@
 import pytest
-
 from helpers import auth_headers, register_and_login
 
 
@@ -17,16 +16,20 @@ def test_list_shows_logged_in_devices(client):
 
 def test_rename_device(client):
     token, device_id = register_and_login(client)
-    r = client.patch(f"/api/v1/devices/{device_id}",
-                     json={"name": "renamed"}, headers=auth_headers(token))
+    r = client.patch(
+        f"/api/v1/devices/{device_id}",
+        json={"name": "renamed"},
+        headers=auth_headers(token),
+    )
     assert r.status_code == 200
     assert r.json()["name"] == "renamed"
 
 
 def test_rename_unknown_device_404(client):
     token, _ = register_and_login(client)
-    r = client.patch("/api/v1/devices/nope", json={"name": "x"},
-                     headers=auth_headers(token))
+    r = client.patch(
+        "/api/v1/devices/nope", json={"name": "x"}, headers=auth_headers(token)
+    )
     assert r.status_code == 404
     assert r.json()["code"] == "not_found"
 
@@ -38,7 +41,9 @@ def test_revoke_kills_exactly_that_devices_token(client):
     r = client.delete(f"/api/v1/devices/{device_b}", headers=auth_headers(token_a))
     assert r.status_code == 204
     # revoked device's token is dead...
-    assert client.get("/api/v1/devices", headers=auth_headers(token_b)).status_code == 401
+    assert (
+        client.get("/api/v1/devices", headers=auth_headers(token_b)).status_code == 401
+    )
     # ...the other device is untouched, and the revoked one left the list
     r = client.get("/api/v1/devices", headers=auth_headers(token_a))
     assert r.status_code == 200
@@ -48,6 +53,7 @@ def test_revoke_kills_exactly_that_devices_token(client):
 # ---------------------------------------------------------------------------
 # Finding 2: double-revoke guard
 # ---------------------------------------------------------------------------
+
 
 def test_double_revoke_returns_404(client):
     """Second DELETE on an already-revoked device must return 404 not_found."""
@@ -67,15 +73,18 @@ def test_double_revoke_returns_404(client):
 # Finding 1: cross-user isolation
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def multi_user_client(tmp_path):
     """App with allow_registration=True so two real users can register."""
-    from crossclipper.config import Settings
-    from crossclipper.main import create_app
     from fastapi.testclient import TestClient
 
-    settings = Settings(secret_key="test-secret", data_dir=tmp_path,
-                        allow_registration=True)
+    from crossclipper.config import Settings
+    from crossclipper.main import create_app
+
+    settings = Settings(
+        secret_key="test-secret", data_dir=tmp_path, allow_registration=True
+    )
     with TestClient(create_app(settings)) as c:
         yield c
 
@@ -85,9 +94,11 @@ def test_cross_user_device_isolation(multi_user_client):
     c = multi_user_client
 
     token_a, device_a = register_and_login(
-        c, email="alice@example.com", password="alice-pw1!", device_name="alice-device")
+        c, email="alice@example.com", password="alice-pw1!", device_name="alice-device"
+    )
     token_b, device_b = register_and_login(
-        c, email="bob@example.com", password="bob-pw1!", device_name="bob-device")
+        c, email="bob@example.com", password="bob-pw1!", device_name="bob-device"
+    )
 
     # A's list must NOT contain B's device
     r = c.get("/api/v1/devices", headers=auth_headers(token_a))
@@ -97,8 +108,11 @@ def test_cross_user_device_isolation(multi_user_client):
     assert device_a in ids_seen_by_a
 
     # A PATCH on B's device_id → 404 (no existence leak)
-    r = c.patch(f"/api/v1/devices/{device_b}",
-                json={"name": "hacked"}, headers=auth_headers(token_a))
+    r = c.patch(
+        f"/api/v1/devices/{device_b}",
+        json={"name": "hacked"},
+        headers=auth_headers(token_a),
+    )
     assert r.status_code == 404
     assert r.json()["code"] == "not_found"
 
