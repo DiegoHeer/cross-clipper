@@ -41,6 +41,9 @@ class Item(Base):
     id: Mapped[str] = mapped_column(String(26), primary_key=True)  # ULID
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     origin_device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"))
+    target_device_id: Mapped[str | None] = mapped_column(
+        ForeignKey("devices.id"), default=None
+    )
     kind: Mapped[str] = mapped_column(String(8))  # text|link|image|file
     body: Mapped[str] = mapped_column(Text)
     blob_id: Mapped[str | None] = mapped_column(ForeignKey("blobs.id"), default=None)
