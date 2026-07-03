@@ -24,6 +24,10 @@ class ItemRepo:
         concurrent writes can observe the same max, so there are no gaps or
         duplicates.  If the table is empty (first item) the aggregate returns
         NULL; coalesce to 0 so the first value is 1.
+
+        Note: relies on SQLAlchemy autoflush — the select() flushes pending
+        rows before executing. If autoflush is ever disabled, same-session
+        creates could read a stale max(sync_seq).
         """
         result = self.session.execute(
             select(func.coalesce(func.max(Item.sync_seq), 0)).where(
@@ -103,11 +107,10 @@ class ItemRepo:
         if not include_deleted:
             stmt = stmt.where(Item.deleted_at.is_(None))
         rows = list(self.session.scalars(stmt))
-        has_more = len(rows) > limit
         page = rows[:limit]
         if not page:
             return [], None
-        next_cursor = str(page[-1].sync_seq) if has_more else str(page[-1].sync_seq)
+        next_cursor = str(page[-1].sync_seq)
         # Always return next_cursor so clients can use it for incremental pulls.
         # Even when there is no "next page", the cursor marks where the client
         # is so future deletes (sync_seq re-assigned beyond this point) surface.

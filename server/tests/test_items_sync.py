@@ -17,7 +17,7 @@ def _post(client, token, body):
     return r.json()
 
 
-def test_cursor_pagination_walks_the_feed_in_id_order(client):
+def test_cursor_pagination_walks_the_feed_in_sync_seq_order(client):
     token, _ = register_and_login(client)
     ids = [_post(client, token, f"item-{n}")["id"] for n in range(3)]
 
