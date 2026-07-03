@@ -4135,3 +4135,15 @@ Expected: everything green (per superpowers:verification-before-completion — p
 - **Spec coverage:** §3 data model → Task 2 (all five tables incl. Blob stub, ULIDs Task 6, tombstones Task 7); §4 REST → Tasks 3–7, WS → Tasks 8–9, pull-based sync → Task 15, version skew → Task 3; §5 auth flow → Tasks 3–4 (first-run lock, rate limit, hashed tokens, constant-time compare, size cap Task 6, CORS Task 2, http:// warning Task 17); §8 error spine → Tasks 12/15/16 (outbox+ULID idempotency, reconnect discipline, single 401 surface, structured errors Task 3); §9 testing → pytest throughout, OpenAPI snapshot Task 10, vitest scenarios Tasks 13–16; §10 phase 1 deliverables → all four (server, codegen, core, CLI). Excluded per scope: blobs endpoints, `/push/register`, Docker, GUI clients.
 - **Type consistency check:** `AuthContext(user_id, device_id)` used in Tasks 4/5/6/8; `ItemOut`/`ItemsPage` field names identical across server schemas (Task 6), contract (Task 10), TS aliases (Task 11), FakeServer (Task 15); `WsLike`/`SocketFactory` shared by Tasks 14/15/17; `OutboxEntry`/`OutboxEvent` shared by Tasks 16/17; storage keys `cc.cursor`/`cc.outbox` consistent.
 - **Known trade-offs (deliberate, not gaps):** rate limiter and hub are in-memory (single process per §2); `create_all` instead of migrations (decision 7); CLI has no unit tests (throwaway per §10; core carries the coverage).
+
+---
+
+# Amendment 2026-07-03: notification targeting (`target_device_id`)
+
+Approved after plan writing (spec §3/§4 updated). Items carry an optional **notification target** — alerting only, never visibility. Binding on remaining tasks:
+
+- **Task 6 (item creation):** `Item` model gains nullable `target_device_id` FK → `devices.id` (schema: add column to the Task-2 model; no migration tool — `create_all` on fresh DBs is fine). `POST /items` accepts optional `target_device_id`; validate it references a non-revoked device belonging to the user, else 422 `{code: "unknown_device"}`. Echo the field in the Item response schema.
+- **Task 7 (feed):** `target_device_id` included in `GET /items` item payloads (and therefore in tombstone-scrubbed entries as-is).
+- **Task 9 (WS broadcasts):** `item_new` events carry the full item incl. `target_device_id` (no server-side filtering — clients apply the notification policy locally in Phase 1).
+- **Tasks 11–12 (codegen/ApiClient):** field flows through generated types; `createItem` accepts optional `targetDeviceId`.
+- **Tasks 13–17 (core/CLI):** `Item` model includes the field; CLI prints a `→ <device>` marker on targeted items. No notification UI in Phase 1 — policy behavior (silent default, per-device toggle, target-always-notifies) is client-phase work.

@@ -48,7 +48,7 @@ Approx. 380×540 px.
 - **Device rail:** "All" plus one entry per registered device (icon, short name, presence dot from WS presence). Clicking filters the feed by origin (`GET /items?origin=`). The rail is a *view filter*, never an address book (parent spec §1 non-goals).
 - **Feed cards:** header (origin device icon + name, relative time), content (text, links styled and clickable, ~3-line clamp), actions by kind — `text`: Copy, Delete; `link`: Copy, Open, Delete. Unknown kinds render the parent spec's "unsupported item — update client" fallback card.
 - **Copy** writes to the clipboard via `navigator.clipboard` (popup has focus, so no extra permission gymnastics) and shows brief inline confirmation ("Copied ✓" flash on the button).
-- **Compose:** single-line input that grows to ~4 lines; Enter sends, Shift+Enter for newline. Sends go through core's outbox (optimistic render, retry on failure per parent spec §8). A paste-heavy workflow is primary: open popup → Ctrl+V → Enter.
+- **Compose:** single-line input that grows to ~4 lines; Enter sends, Shift+Enter for newline. Above the input, the standard **target picker** (parent spec §4 notification policy): a row of device chips defaulting to "Silent" — selecting a chip makes that device the item's notification target. Sends go through core's outbox (optimistic render, retry on failure per parent spec §8). A paste-heavy workflow is primary: open popup → Ctrl+V → Enter.
 - **New-item behavior:** items arriving over WS insert at the top with a subtle highlight; if the user has scrolled down, a "↑ new items" pill appears instead of yanking scroll position.
 
 ## 4. Onboarding flow
@@ -83,7 +83,7 @@ clients/extension/
 - **Single sync engine instance** lives in the **background service worker** (via `@crossclipper/core`): owns the WS connection, cursor, outbox, and an item cache in `chrome.storage.local`. The popup is a pure renderer talking to the worker over runtime messaging; opening the popup triggers a `refresh` (pull from cursor). This avoids two competing sync engines and makes popup startup instant (render from cache, then reconcile).
 - **MV3 lifecycle handling (by design, not workaround):** when the worker is killed idle, the WS drops. On any wake (popup open, alarm, notification click), the worker re-instantiates core, which pulls from its persisted cursor — the parent spec's single recovery path. A periodic `chrome.alarms` tick (~1 min) gives passive freshness for notifications without a persistent connection.
 - **Auth token** in `chrome.storage.local` (not `sync` — the device identity is per-browser-profile by definition).
-- **Notifications:** browser notification on `item_new` when enabled; clicking opens the popup. No content preview in the notification title beyond a short snippet (it's the user's own machine; full content is one click away).
+- **Notifications:** per the parent spec's notification policy — a browser notification is raised when this device is the item's `target_device_id` (always), or on any new item when the "notify me on new items" toggle (Settings → General, default off) is enabled. Clicking opens the popup. No content preview beyond a short snippet.
 - **Context menu:** "Send selection to CrossClipper" on text selections (`kind: text`), "Send link to CrossClipper" on links (`kind: link`) — posts via the worker's outbox, confirmation via badge flash.
 - **Toolbar badge:** unread count since the popup was last opened; cleared on open.
 
