@@ -1,0 +1,23 @@
+# CrossClipper — the entire deployment.
+#   1. mkdir data          (or: chown -R 1000:1000 ./data if it exists)
+#   2. set CC_SECRET_KEY   (any long random string; the only required setting)
+#   3. docker compose up -d
+# TLS termination is your reverse proxy's job (Caddy/Traefik/nginx) — TLS in
+# front is non-negotiable for non-LAN use.
+services:
+  crossclipper:
+    image: ${CROSSCLIPPER_IMAGE:-ghcr.io/diegoheer/crossclipper-server:latest}
+    user: "1000:1000" # match your host user (id -u:id -g) so ./data stays yours
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data # SQLite DB + blobs; backup = copy this folder
+    environment:
+      CC_SECRET_KEY: ${CC_SECRET_KEY:?set CC_SECRET_KEY in the environment or an .env file}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

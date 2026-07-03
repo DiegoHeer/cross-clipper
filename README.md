@@ -12,6 +12,35 @@ Self-hosted clipboard & share sync across your own devices — Windows, iOS, And
 - **Pull-based sync with live nudges.** Clients catch up with a cursor pull; WebSocket and push are wake signals, never the source of truth. Push payloads are content-free — clipboard content never transits Apple/Google.
 - **Self-hosting as a feature.** Single Docker image, non-root, one `/data` folder to back up, SQLite by default, Postgres/S3 by config.
 
+## Self-hosting
+
+The entire deployment is one container and one folder:
+
+```bash
+mkdir crossclipper && cd crossclipper
+curl -fsSLO https://raw.githubusercontent.com/DiegoHeer/cross-clipper/main/docker-compose.yml
+mkdir data                       # owned by you; the container runs as UID 1000
+echo "CC_SECRET_KEY=$(openssl rand -hex 32)" > .env
+docker compose up -d
+```
+
+Backup = copy `./data`. Put TLS in front (Caddy/Traefik/nginx) — the server
+speaks plain HTTP and TLS termination is the deployment's job.
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `CC_SECRET_KEY` | — (required) | Secret key; any long random string |
+| `CC_DATA_DIR` | `/data` (image) | Root for the SQLite DB and blobs |
+| `CC_ALLOW_REGISTRATION` | `false` | Re-open registration after first user |
+| `CC_ITEM_MAX_BYTES` | `262144` | Item body size cap (bytes) |
+| `CC_TOMBSTONE_RETENTION_DAYS` | `30` | Days before deleted items are pruned |
+| `CC_TOKEN_TTL_DAYS` | `365` | Device token lifetime |
+| `CC_CORS_ORIGINS` | (none) | Comma-separated allowed origins |
+| `CC_MIN_CLIENT_VERSION` | `0.0.0` | Reject older clients (426) |
+
+If the container exits with `/data is not writable by UID 1000`, run
+`chown -R 1000:1000 ./data` or set `user: "$(id -u):$(id -g)"` in the compose file.
+
 ## Architecture
 
 ```

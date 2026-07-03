@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Callable
@@ -55,10 +56,28 @@ async def _lifespan(app):
     task.cancel()
 
 
+def ensure_writable_data_dir(settings: Settings) -> None:
+    """Fail fast if the data root is unusable (system spec §7).
+
+    The image runs as UID 1000, never root, and does no chown-on-startup
+    magic — so a host-owned ./data must be fixed by the operator.
+    """
+    try:
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        settings.blobs_dir.mkdir(parents=True, exist_ok=True)
+        probe = settings.data_dir / ".boot-probe"
+        probe.write_text("ok")
+        probe.unlink()
+    except OSError as exc:
+        raise SystemExit(
+            f"{settings.data_dir} is not writable by UID {os.getuid()} — "
+            f"run: chown -R 1000:1000 ./data or set user: in compose ({exc})"
+        ) from exc
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
-    settings.blobs_dir.mkdir(parents=True, exist_ok=True)
+    ensure_writable_data_dir(settings)
 
     engine = make_engine(settings.database_url)
     init_db(engine)
