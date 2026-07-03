@@ -28,6 +28,10 @@ packages = ["src/crossclipper"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "e2e: end-to-end tests that run against a live uvicorn subprocess (deselected from the default run)",
+]
+addopts = "-m 'not e2e'"
 
 [tool.ruff]
 target-version = "py312"
@@ -38,3 +42,4 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E402"]
+"tests_e2e/*" = ["E402"]
