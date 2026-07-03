@@ -1,0 +1,4 @@
+*
+!server/pyproject.toml
+!server/uv.lock
+!server/src
