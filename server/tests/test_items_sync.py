@@ -31,7 +31,8 @@ def test_cursor_pagination_walks_the_feed_in_id_order(client):
 
 
 def test_origin_filter(client):
-    # Same user, two devices — origin filter should narrow to device_a's items only
+    # register_and_login reuses the single user (registration locks after first user),
+    # so token_a and token_b are two devices of ONE user — making this a true origin-filter test.
     token_a, device_a = register_and_login(client, device_name="device-a")
     token_b, device_b = register_and_login(client, device_name="device-b")
     _post(client, token_a, "from-a")
@@ -115,9 +116,7 @@ def test_tombstone_includes_target_device_id(client):
                          headers=auth_headers(token)).status_code == 204
     # Cold fetch: gone (no cursor, tombstone hidden)
     # Warm fetch: tombstone returned with target_device_id (null here, but field present)
-    anchor = _post(client, token, "anchor")
-    # Re-fetch anchor first so we have a ULID before the deleted item
-    # Instead, use empty cursor (initial ULID before all items)
+    # Use zero-ULID cursor (before all items) to retrieve tombstone in incremental sync
     warm = client.get(f"/api/v1/items?cursor=00000000000000000000000000",
                       headers=auth_headers(token)).json()
     tombstone = next(i for i in warm["items"] if i["id"] == item["id"])
@@ -132,3 +131,30 @@ def test_list_page_returns_target_device_id(client):
     assert r.status_code == 200
     result = r.json()["items"][0]
     assert "target_device_id" in result
+
+
+def test_limit_boundary_validation(client):
+    """limit is constrained ge=1 le=500; values outside that range → 422."""
+    token, _ = register_and_login(client)
+    headers = auth_headers(token)
+    assert client.get("/api/v1/items?limit=0", headers=headers).status_code == 422
+    assert client.get("/api/v1/items?limit=501", headers=headers).status_code == 422
+
+
+def test_origin_filter_nonexistent_device(client):
+    """origin= with a device id that doesn't exist → 200 with empty items list."""
+    token, _ = register_and_login(client)
+    r = client.get("/api/v1/items?origin=NONEXISTENT-DEVICE-ID",
+                   headers=auth_headers(token))
+    assert r.status_code == 200
+    assert r.json()["items"] == []
+
+
+def test_malformed_cursor_does_not_500(client):
+    """Malformed cursor (non-ULID) is compared lexicographically; accepted behavior is
+    200 with an empty list (cursor sorts after all real ULIDs or matches nothing)."""
+    token, _ = register_and_login(client)
+    _post(client, token, "some-item")
+    r = client.get("/api/v1/items?cursor=not-a-ulid!!!", headers=auth_headers(token))
+    assert r.status_code == 200  # must not 500
+    assert isinstance(r.json()["items"], list)
