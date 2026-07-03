@@ -1,2 +1,4 @@
 export * from "./types";
 export * from "./api/client";
+export * from "./storage";
+export * from "./cache";
