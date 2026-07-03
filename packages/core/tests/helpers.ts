@@ -49,9 +49,12 @@ export class FakeServer {
   sockets: FakeSocket[] = [];
   autoOpen = true;
   listDelayMs = 0;
+  listPageLimit = 100;                                   // override to force pagination
+  rejectListWith: { status: number; code: string } | null = null; // reject GET /items once
   failNextCreates = 0;                                   // throw TypeError n times
   rejectNextCreateWith: { status: number; code: string } | null = null;
   postAttempts = 0;
+  listCallCount = 0;                                     // how many GET /items calls served
   private seq = 0;
   // Monotonic sync_seq: assigned on create, re-assigned on delete (mirrors server repo.py).
   // Stored per item-id so deleteItem can bump it without touching Item type.
@@ -105,8 +108,17 @@ export class FakeServer {
 
     if (url.pathname === "/api/v1/items" && method === "GET") {
       if (this.listDelayMs) await sleep(this.listDelayMs);
+      if (this.rejectListWith) {
+        const r = this.rejectListWith;
+        this.rejectListWith = null;
+        return json(r.status, { code: r.code, message: r.code });
+      }
+      this.listCallCount++;
       const cursor = url.searchParams.get("cursor");
-      const limit = Number(url.searchParams.get("limit") ?? "100");
+      const limit = Math.min(
+        Number(url.searchParams.get("limit") ?? "100"),
+        this.listPageLimit,
+      );
       // Mirror server semantics: filter strictly by sync_seq > cursor (opaque integer string).
       // Without cursor (cold pull): exclude tombstones from initial delivery, matching server
       // include_deleted=false default (items live at the time of the pull).

@@ -5,6 +5,10 @@ import { MemoryStorage } from "../src/storage";
 import { SyncEngine, type SyncEngineEvent } from "../src/sync/engine";
 import { FakeServer, sleep, tick } from "./helpers";
 
+// Helper: count pull-related status events as a proxy for resync invocations
+const syncingStatuses = (events: SyncEngineEvent[]) =>
+  events.filter((e) => e.type === "status" && (e as { status: string }).status === "syncing").length;
+
 function makeEngine(server: FakeServer, storage = new MemoryStorage()) {
   const engine = new SyncEngine({
     client: new ApiClient({ baseUrl: "http://test", fetchFn: server.fetchFn }),
@@ -146,6 +150,121 @@ describe("SyncEngine scenarios", () => {
     await sleep(120);
     const pings = server.lastSocket()!.sent.filter((s) => s === '{"type":"ping"}');
     expect(pings.length).toBeGreaterThanOrEqual(2);
+    engine.stop();
+  });
+
+  // Finding 1: no resync re-entry guard — second onOpen mid-pull must not start a concurrent resync;
+  // it must queue exactly one follow-up that runs after the first finishes.
+  it("concurrent resync on flap: no concurrent pull starts during in-flight resync", async () => {
+    const server = new FakeServer();
+    server.listDelayMs = 40; // slow pull so we can flap mid-pull
+    server.addItem("item-a");
+    server.addItem("item-b");
+    const { engine, events, storage } = makeEngine(server);
+
+    // Start engine — socket opens (autoOpen), first resync starts (pull delayed 40ms).
+    // FakeServer increments listCallCount AFTER the delay, so it is 0 while the pull is in-flight.
+    await engine.start();
+    await tick(); // onOpen fired; first resync in-flight (listCallCount still 0)
+
+    // Simulate connection flap mid-pull.
+    server.lastSocket()!.serverDrop();
+    await tick();
+    await tick();
+
+    // Core invariant: the second onOpen must NOT have started a second pull concurrently.
+    // listCallCount is still 0 because the first pull's 40ms delay hasn't elapsed, and the
+    // guarded resync must not have started a new pull on top of the in-flight one.
+    expect(server.listCallCount).toBe(0);
+
+    // Let everything settle — first pull finishes, queued follow-up runs.
+    await sleep(120);
+
+    // Items arrive exactly once regardless of how many resyncs ran total.
+    expect(bodies(events)).toEqual(["item-a", "item-b"]);
+
+    // Cursor persisted correctly to the final item's sync_seq.
+    const expectedCursor = String(server.itemSyncSeq.get(server.items[server.items.length - 1]!.id));
+    expect(await storage.get("cc.cursor")).toBe(expectedCursor);
+
+    engine.stop();
+  });
+
+  // Finding 2: 401 retries forever
+  it("401 during pull emits auth_failed exactly once, stops engine, no further retries", async () => {
+    const server = new FakeServer();
+    server.rejectListWith = { status: 401, code: "unauthorized" };
+    const { engine, events } = makeEngine(server);
+
+    await engine.start();
+    await sleep(50); // enough time for multiple retries if bug is present
+
+    const authFailedEvents = events.filter((e) => e.type === "auth_failed");
+    expect(authFailedEvents).toHaveLength(1);
+
+    const statusEvents = events.filter((e) => e.type === "status").map((e) => (e as { status: string }).status);
+    expect(statusEvents[statusEvents.length - 1]).toBe("stopped");
+
+    // Advance time further — no more pulls should occur
+    const pullCountBefore = server.listCallCount;
+    await sleep(50);
+    expect(server.listCallCount).toBe(pullCountBefore); // no further pulls
+  });
+
+  // Finding 3: multi-page cursor persistence
+  it("multi-page pull: walks all pages, cache complete, cursor = final page cursor", async () => {
+    const server = new FakeServer();
+    server.listPageLimit = 3; // force pagination at 3 items per page
+    for (let n = 0; n < 7; n++) server.addItem(`pg-item-${n}`);
+    const last = server.items[server.items.length - 1]!;
+    const { engine, events, storage } = makeEngine(server);
+
+    await engine.start();
+    await sleep(50);
+
+    // All 7 items delivered exactly once
+    expect(bodies(events)).toEqual(
+      ["pg-item-0", "pg-item-1", "pg-item-2", "pg-item-3", "pg-item-4", "pg-item-5", "pg-item-6"],
+    );
+    // All in cache
+    for (const item of server.items) {
+      expect(engine.cache.has(item.id)).toBe(true);
+    }
+    // Cursor = final page's next_cursor = sync_seq of last item
+    expect(await storage.get("cc.cursor")).toBe(String(server.itemSyncSeq.get(last.id)));
+
+    engine.stop();
+  });
+
+  // Finding 4: buffer-boundary tombstone scenario
+  it("WS item_deleted for item delivered by in-flight pull results in deleted item, one event", async () => {
+    const server = new FakeServer();
+    server.listDelayMs = 20;
+    const victim = server.addItem("doomed");
+    const { engine, events } = makeEngine(server);
+
+    await engine.start();
+    await tick(); // pull in flight (delayed)
+
+    // WS tombstone arrives for the item the pull is about to deliver
+    server.broadcast({ type: "item_deleted", item_id: victim.id });
+    await sleep(50); // pull completes, buffer drains
+
+    // Item must NOT be in cache (tombstone wins)
+    expect(engine.cache.has(victim.id)).toBe(false);
+
+    // Exactly one item_deleted event (not zero, not two)
+    const deletedEvents = events.filter(
+      (e) => e.type === "item_deleted" && (e as { itemId: string }).itemId === victim.id,
+    );
+    expect(deletedEvents).toHaveLength(1);
+
+    // No "item" event for victim (pull upserted then tombstone removed, or tombstone suppressed upsert)
+    const itemEvents = events.filter(
+      (e) => e.type === "item" && (e as { item: { id: string } }).item.id === victim.id,
+    );
+    expect(itemEvents).toHaveLength(0);
+
     engine.stop();
   });
 });

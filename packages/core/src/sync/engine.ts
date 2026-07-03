@@ -1,3 +1,4 @@
+import { ApiError } from "../api/client";
 import type { ApiClient } from "../api/client";
 import { ItemCache } from "../cache";
 import type { SyncStorage } from "../storage";
@@ -12,7 +13,8 @@ export type SyncEngineEvent =
   | { type: "item"; item: Item }
   | { type: "item_deleted"; itemId: string }
   | { type: "devices_changed" }
-  | { type: "status"; status: SyncStatus };
+  | { type: "status"; status: SyncStatus }
+  | { type: "auth_failed" };
 
 type ServerEvent =
   | { type: "item_new"; item: Item }
@@ -35,6 +37,7 @@ export class SyncEngine {
   private cursor: string | null = null;
   private socket: ReconnectingSocket | null = null;
   private syncing = false;
+  private resyncQueued = false;
   private buffer: ServerEvent[] = [];
   private listeners: Array<(e: SyncEngineEvent) => void> = [];
   private pingTimer: ReturnType<typeof setInterval> | undefined;
@@ -103,13 +106,26 @@ export class SyncEngine {
   }
 
   private async resync(): Promise<void> {
+    // Re-entry guard: if a pull is already in-flight, queue exactly one follow-up.
+    if (this.syncing) {
+      this.resyncQueued = true;
+      return;
+    }
     this.syncing = true;
+    this.resyncQueued = false;
     this.buffer = [];
     this.emit({ type: "status", status: "syncing" });
     try {
       await this.pull();
-    } catch {
+    } catch (err) {
+      this.syncing = false;
       if (this.stopped) return;
+      // 401 → auth failure: signal once, stop, never retry.
+      if (err instanceof ApiError && err.status === 401) {
+        this.emit({ type: "auth_failed" });
+        this.stop();
+        return;
+      }
       this.retryTimer = setTimeout(() => void this.resync(),
         this.deps.backoff?.baseMs ?? 1000);
       return;
@@ -120,6 +136,8 @@ export class SyncEngine {
     for (const e of buffered) this.apply(e);
     this.startPing();
     this.emit({ type: "status", status: "live" });
+    // Run exactly one queued follow-up resync if a reconnect arrived mid-pull.
+    if (this.resyncQueued) void this.resync();
   }
 
   private async pull(): Promise<void> {
@@ -131,7 +149,11 @@ export class SyncEngine {
         if (item.deleted_at) {
           if (this.cache.remove(item.id)) this.emit({ type: "item_deleted", itemId: item.id });
         } else if (this.cache.upsert(item)) {
-          this.emit({ type: "item", item });
+          // Tombstone wins: if the WS buffer already contains a deletion for this item,
+          // skip the item event now. The deletion will be emitted when the buffer drains.
+          if (!this.bufferHasTombstone(item.id)) {
+            this.emit({ type: "item", item });
+          }
         }
       }
       if (!page.next_cursor) break;
@@ -141,6 +163,13 @@ export class SyncEngine {
       this.cursor = cursor;
       if (cursor) await this.deps.storage.set(CURSOR_KEY, cursor);
     }
+  }
+
+  /** Returns true if `buffer` contains an item_deleted event for the given id. */
+  private bufferHasTombstone(id: string): boolean {
+    return this.buffer.some(
+      (e) => e.type === "item_deleted" && e.item_id === id,
+    );
   }
 
   private startPing(): void {
