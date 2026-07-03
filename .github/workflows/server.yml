@@ -1,0 +1,42 @@
+name: Server
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# No paths filter — "Server (lint + test)" is a required status check in branch
+# protection. With classic branch protection, a required check that never runs
+# blocks merging. This workflow must run on every PR.
+
+concurrency:
+  group: server-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server (lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint (ruff check)
+        run: uv run ruff check .
+
+      - name: Format (ruff format)
+        run: uv run ruff format --check .
+
+      - name: Test
+        run: uv run pytest
