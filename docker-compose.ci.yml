@@ -1,0 +1,8 @@
+# CI override: run the documented compose file against the locally-built image
+# with a throwaway secret. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait
+services:
+  crossclipper:
+    image: crossclipper-server:ci
+    environment:
+      CC_SECRET_KEY: ci-smoke-secret
