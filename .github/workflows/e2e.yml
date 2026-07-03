@@ -1,0 +1,43 @@
+name: E2E
+
+on:
+  pull_request:
+    paths:
+      - 'server/**'
+      - '.github/workflows/e2e.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'server/**'
+      - '.github/workflows/e2e.yml'
+
+# Note: the original ci.yml had `needs: server` on this job. Cross-workflow
+# dependencies are not supported in GitHub Actions, so e2e and server now run
+# in parallel. This is faster and acceptable — e2e failures are surfaced
+# alongside server failures rather than after them.
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: E2E journeys (Layer A)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: E2E tests
+        run: uv run pytest -m e2e tests_e2e/
