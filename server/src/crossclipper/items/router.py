@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from ulid import ULID
@@ -9,7 +9,7 @@ from crossclipper.db.models import Device
 from crossclipper.db.session import get_session
 from crossclipper.errors import AppError
 from crossclipper.items.repo import ItemRepo
-from crossclipper.items.schemas import ItemIn, ItemKind, ItemOut
+from crossclipper.items.schemas import ItemIn, ItemKind, ItemOut, ItemsPage
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -60,3 +60,27 @@ async def create_item(payload: ItemIn, request: Request, response: Response,
         raise AppError(422, "id_conflict",
                        "the supplied id is already in use; omit id to let the server mint one")
     return ItemOut.model_validate(item)
+
+
+@router.get("", response_model=ItemsPage)
+async def list_items(cursor: str | None = None, origin: str | None = None,
+                     limit: int = Query(100, ge=1, le=500),
+                     ctx: AuthContext = Depends(require_auth),
+                     session: Session = Depends(get_session)) -> ItemsPage:
+    items, next_cursor = ItemRepo(session).list_page(
+        ctx.user_id, cursor=cursor, origin=origin, limit=limit,
+        include_deleted=cursor is not None)
+    return ItemsPage(items=[ItemOut.model_validate(i) for i in items],
+                     next_cursor=next_cursor)
+
+
+@router.delete("/{item_id}", status_code=204)
+async def delete_item(item_id: str,
+                      ctx: AuthContext = Depends(require_auth),
+                      session: Session = Depends(get_session)) -> Response:
+    repo = ItemRepo(session)
+    item = repo.get(ctx.user_id, item_id)
+    if item is None:
+        raise AppError(404, "not_found", "item not found")
+    repo.soft_delete(item)
+    return Response(status_code=204)
