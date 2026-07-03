@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -47,6 +49,17 @@ from tests_e2e.conftest import (
 
 def _headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _ws_base_url(http_base_url: str) -> str:
+    """Convert an HTTP base URL to its WebSocket equivalent.
+
+    ``http://host:port`` → ``ws://host:port``
+    ``https://host:port`` → ``wss://host:port``
+    """
+    parsed = urlparse(http_base_url)
+    scheme = "wss" if parsed.scheme == "https" else "ws"
+    return parsed._replace(scheme=scheme).geturl()
 
 
 def _login(
@@ -241,13 +254,13 @@ def test_journey_live_events(server: ServerInfo) -> None:
 
     async def _run() -> None:
         base = server.base_url
-        port = server.port
+        ws_base = _ws_base_url(base)
 
         # Login as two fresh devices for this journey
         token_a, device_id_a = _login(base, "J3-Device-A")
         token_b, device_id_b = _login(base, "J3-Device-B")
 
-        ws_url_b = f"ws://127.0.0.1:{port}/api/v1/ws?token={token_b}"
+        ws_url_b = f"{ws_base}/api/v1/ws?token={token_b}"
 
         async with websockets.connect(ws_url_b) as ws_b:
             # Guard: confirm the server-side handler loop is running (hub.add precedes
@@ -376,14 +389,14 @@ def test_journey_revocation_ws(server: ServerInfo) -> None:
 
     async def _run() -> None:
         base = server.base_url
-        port = server.port
+        ws_base = _ws_base_url(base)
 
         # Login as two fresh devices for this journey
         token_a, device_id_a = _login(base, "J4WS-Device-A")
         token_b, device_id_b = _login(base, "J4WS-Device-B")
 
-        ws_url_a = f"ws://127.0.0.1:{port}/api/v1/ws?token={token_a}"
-        ws_url_b = f"ws://127.0.0.1:{port}/api/v1/ws?token={token_b}"
+        ws_url_a = f"{ws_base}/api/v1/ws?token={token_a}"
+        ws_url_b = f"{ws_base}/api/v1/ws?token={token_b}"
 
         async with (
             websockets.connect(ws_url_a) as ws_a,
@@ -532,3 +545,19 @@ def test_journey_server_kill_recovery(restart_server: ServerInfo) -> None:
 
     finally:
         _stop_server(new_proc)
+
+
+# ---------------------------------------------------------------------------
+# External-server mode contract probe
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+def test_external_mode_contract(server: ServerInfo) -> None:
+    """In CC_E2E_BASE_URL mode the suite must target the external server."""
+    external = os.environ.get("CC_E2E_BASE_URL")
+    if external:
+        assert server.base_url == external.rstrip("/")
+        assert server.proc is None
+    else:
+        assert server.proc is not None
