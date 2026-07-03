@@ -1,8 +1,9 @@
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from crossclipper.db.models import Device
+from crossclipper.db.models import Device, utcnow
 
 
 class DeviceRepo:
@@ -20,3 +21,16 @@ class DeviceRepo:
         if device is None or device.user_id != user_id:
             return None
         return device
+
+    def list_active(self, user_id: str) -> list[Device]:
+        stmt = (select(Device)
+                .where(Device.user_id == user_id, Device.revoked_at.is_(None))
+                .order_by(Device.created_at))
+        return list(self.session.scalars(stmt))
+
+    def rename(self, device: Device, name: str) -> Device:
+        device.name = name
+        return device
+
+    def revoke(self, device: Device) -> None:
+        device.revoked_at = utcnow()
