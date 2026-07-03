@@ -70,3 +70,47 @@ def test_old_client_version_rejected(tmp_path):
         assert r.json()["code"] == "client_too_old"
         assert c.get("/health", headers={"X-Client-Version": "1.0.0"}).status_code == 200
         assert c.get("/health").status_code == 200  # no header → lenient
+
+
+from helpers import auth_headers, register_and_login
+
+
+def test_login_returns_token_and_device(client):
+    token, device_id = register_and_login(client)
+    assert len(token) > 30
+    assert device_id
+
+
+def test_login_wrong_password_401(client):
+    register_and_login(client)
+    r = client.post("/api/v1/auth/login", json={
+        "email": "me@example.com", "password": "wrong-password",
+        "device_name": "d", "platform": "other"})
+    assert r.status_code == 401
+    assert r.json()["code"] == "invalid_credentials"
+
+
+def test_tokens_are_hashed_at_rest(client, app):
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from crossclipper.db.models import AuthToken
+
+    token, _ = register_and_login(client)
+    with Session(app.state.engine) as session:
+        rows = list(session.scalars(select(AuthToken)))
+    assert len(rows) == 1
+    assert rows[0].token_hash != token
+    assert len(rows[0].token_hash) == 64  # sha256 hex
+
+
+def test_whoami_roundtrip_and_rejections(client):
+    token, device_id = register_and_login(client)
+    r = client.get("/api/v1/auth/whoami", headers=auth_headers(token))
+    assert r.status_code == 200
+    assert r.json()["device_id"] == device_id
+
+    assert client.get("/api/v1/auth/whoami").status_code == 401
+    r = client.get("/api/v1/auth/whoami", headers=auth_headers("bogus"))
+    assert r.status_code == 401
+    assert r.json()["code"] == "invalid_token"

@@ -1,4 +1,12 @@
+import hashlib
+import hmac
+import secrets
+from dataclasses import dataclass
+
 import bcrypt
+from sqlalchemy.orm import Session
+
+from crossclipper.db.models import Device, utcnow
 
 
 def hash_password(password: str) -> str:
@@ -10,3 +18,35 @@ def verify_password(password: str, hashed: str) -> bool:
         return bcrypt.checkpw(password.encode(), hashed.encode())
     except ValueError:
         return False
+
+
+def new_token() -> tuple[str, str]:
+    """Returns (raw token for the client, sha256 hash for the DB)."""
+    raw = secrets.token_urlsafe(32)
+    return raw, hash_token(raw)
+
+
+def hash_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class AuthContext:
+    user_id: str
+    device_id: str
+
+
+def authenticate_token(session: Session, raw_token: str) -> AuthContext | None:
+    from crossclipper.auth.repo import TokenRepo  # local import avoids cycle
+
+    candidate = hash_token(raw_token)
+    row = TokenRepo(session).get_by_hash(candidate)
+    if row is None or not hmac.compare_digest(row.token_hash, candidate):
+        return None
+    if row.expires_at <= utcnow():
+        return None
+    device = session.get(Device, row.device_id)
+    if device is None or device.revoked_at is not None:
+        return None
+    device.last_seen_at = utcnow()
+    return AuthContext(user_id=row.user_id, device_id=row.device_id)

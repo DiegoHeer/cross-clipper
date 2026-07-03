@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 
 from crossclipper import health
 from crossclipper.auth import router as auth_router
+from crossclipper.auth.ratelimit import RateLimiter
 from crossclipper.config import Settings
 from crossclipper.db.session import init_db, make_engine
 from crossclipper.errors import register_error_handlers
@@ -21,6 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="CrossClipper", version="0.1.0")
     app.state.settings = settings
     app.state.engine = engine
+    app.state.limiter = RateLimiter(max_events=10, window_seconds=60)
 
     if settings.cors_origin_list:
         app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list,
