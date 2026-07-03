@@ -50,7 +50,8 @@ if (cmd === "login") {
     await client.register(email, password);
     console.log("registered new user (first run)");
   } catch (err) {
-    if (!(err instanceof ApiError && err.code === "registration_closed")) throw err;
+    // registration_closed = server locked; email_taken = user already exists; both mean skip to login
+    if (!(err instanceof ApiError && (err.code === "registration_closed" || err.code === "email_taken"))) throw err;
   }
   const res = await client.login({
     email, password, device_name: deviceName ?? os.hostname(), platform: "other" });
