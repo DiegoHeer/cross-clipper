@@ -12,8 +12,9 @@ def rate_limit(request: Request, bucket: str) -> None:
         raise AppError(429, "rate_limited", "too many attempts; try again later")
 
 
-async def require_auth(request: Request,
-                       session: Session = Depends(get_session)) -> AuthContext:
+async def require_auth(
+    request: Request, session: Session = Depends(get_session)
+) -> AuthContext:
     header = request.headers.get("authorization", "")
     parts = header.split(None, 1)  # split on any whitespace, max 2 parts
     if len(parts) != 2 or parts[0].lower() != "bearer":

@@ -16,8 +16,16 @@ class ItemRepo:
             return None
         return item
 
-    def create(self, *, id: str, user_id: str, origin_device_id: str,
-               kind: str, body: str, target_device_id: str | None = None) -> Item:
+    def create(
+        self,
+        *,
+        id: str,
+        user_id: str,
+        origin_device_id: str,
+        kind: str,
+        body: str,
+        target_device_id: str | None = None,
+    ) -> Item:
         item = Item(
             id=id,
             user_id=user_id,
@@ -30,10 +38,21 @@ class ItemRepo:
         self.session.flush()
         return item
 
-    def list_page(self, user_id: str, *, cursor: str | None, origin: str | None,
-                  limit: int, include_deleted: bool) -> tuple[list[Item], str | None]:
-        stmt = (select(Item).where(Item.user_id == user_id)
-                .order_by(Item.id).limit(limit + 1))
+    def list_page(
+        self,
+        user_id: str,
+        *,
+        cursor: str | None,
+        origin: str | None,
+        limit: int,
+        include_deleted: bool,
+    ) -> tuple[list[Item], str | None]:
+        stmt = (
+            select(Item)
+            .where(Item.user_id == user_id)
+            .order_by(Item.id)
+            .limit(limit + 1)
+        )
         if cursor:
             stmt = stmt.where(Item.id > cursor)
         if origin:
@@ -52,5 +71,6 @@ class ItemRepo:
 
     def prune_tombstones(self, cutoff: datetime) -> int:
         result = self.session.execute(
-            delete(Item).where(Item.deleted_at.is_not(None), Item.deleted_at < cutoff))
+            delete(Item).where(Item.deleted_at.is_not(None), Item.deleted_at < cutoff)
+        )
         return result.rowcount

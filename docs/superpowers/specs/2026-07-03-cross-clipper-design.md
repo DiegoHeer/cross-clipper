@@ -27,7 +27,7 @@ A user self-hosts a single server (with attached storage), then connects clients
 - **Passive clipboard watching — anywhere.** On mobile it's impossible (iOS forbids background clipboard access; Android 10+ heavily restricts it); on desktop it's deliberately rejected (amended 2026-07-03): silently syncing every Ctrl+C would ship 2FA codes and secrets before the user can think. Capture is always intentional: a dedicated global capture hotkey on desktop, share sheet / compose on mobile.
 - **End-to-end encryption (MVP).** Trust model is TLS in transit + you own the server (standard self-hosted posture). True E2EE would break server-side thumbnails and add key-management UX; it is a potential protocol v2, not a bolt-on. This is stated so nobody assumes E2EE exists.
 - **Cross-user messaging.** One user's devices talk to that user's feed. Multi-user means isolated accounts on one server, not user-to-user sends.
-- **Targeted per-device sends.** The feed is broadcast-to-all-my-devices; the device list is a view filter, not an address book. Threading/addressing machinery is deliberately excluded (YAGNI) — revisit only if cross-user messaging ever becomes a goal.
+- **Targeted per-device content.** The feed is broadcast-to-all-my-devices — every device sees every item; the device list is a view filter, not an address book for visibility. Threading/addressing machinery is deliberately excluded (YAGNI) — revisit only if cross-user messaging ever becomes a goal. *Amended 2026-07-03:* items DO carry an optional **notification target** (`target_device_id`) — targeting controls which device gets alerted, never which devices can see the item (see §4 notification policy).
 
 ## 2. Architecture overview
 
@@ -98,6 +98,7 @@ Device    { id, user_id → User, name, platform (ios|android|windows|extension|
             push_token?, push_transport? (apns|fcm|unifiedpush|none),
             last_seen_at, created_at, revoked_at? }
 Item      { id (ULID), user_id → User, origin_device_id → Device,
+            target_device_id? → Device,   ← notification target only, never visibility
             kind (text|link|image|file),
             body (text content or caption),
             blob_id? → Blob, created_at, deleted_at? }
@@ -129,7 +130,7 @@ PATCH  /devices/{id}             (rename)
 DELETE /devices/{id}             (revoke)
 
 GET    /items?cursor=&origin=&limit=   → paginated feed (origin = device filter)
-POST   /items                    { kind, body }            → Item
+POST   /items                    { kind, body, target_device_id? }  → Item
 DELETE /items/{id}               (soft delete)
 
 POST   /push/register            { transport, token }      (APNs/FCM/UnifiedPush)
@@ -158,6 +159,16 @@ The single most important reliability decision. The source of truth for catching
 ### Push payloads carry no content
 
 APNs/FCM messages are content-free wake signals ("something changed"). The client shows a local notification and pulls on open. Clipboard content never transits Apple/Google infrastructure.
+
+### Notification policy (amended 2026-07-03)
+
+Visibility and alerting are separate axes. Every item syncs to every device; who gets *alerted* follows:
+
+1. **Targeted item** (`target_device_id` set): only the target device raises a notification (banner/buzz/wake-push). All other devices sync silently (badge/unread only).
+2. **Untargeted item:** silent by default everywhere. Each device has a local **"notify me on new items"** toggle (default off) to opt into banners for untargeted items.
+3. Targeting always notifies the target, regardless of its toggle.
+
+Every compose surface (mobile share sheet, mobile/extension/desktop compose) shows the same device-chip target picker, defaulting to untargeted/silent. The desktop capture hotkey sends untargeted (it has no UI — speed path). Phase-5 push relay wakes only the devices this policy says to alert.
 
 ## 5. Auth & security
 

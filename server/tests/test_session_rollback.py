@@ -1,7 +1,7 @@
 """Test that get_session rolls back on HTTPException (finding: partial write must not persist)."""
 
 import pytest
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,7 +23,14 @@ def rollback_app(tmp_path):
 
     @app.post("/write-then-fail")
     def write_then_fail(session: Session = Depends(get_session)):
-        session.add(User(id="u1", email="test@example.com", password_hash="x", created_at=utcnow()))
+        session.add(
+            User(
+                id="u1",
+                email="test@example.com",
+                password_hash="x",
+                created_at=utcnow(),
+            )
+        )
         session.flush()  # send to DB within transaction
         raise HTTPException(status_code=400, detail="intentional failure")
 
