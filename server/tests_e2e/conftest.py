@@ -85,16 +85,23 @@ def _wait_port_free(
     retries: int = 40,
     delay: float = 0.1,
 ) -> None:
-    """Poll until the TCP port is bindable again or raise RuntimeError."""
+    """Poll until the TCP port is bindable again or raise RuntimeError.
+
+    Uses a plain bind() with no SO_REUSEADDR so the result mirrors what
+    uvicorn sees when it tries to bind the same port.  SO_REUSEADDR would
+    succeed while the port is still in TIME_WAIT and give a false positive.
+    """
     for _attempt in range(retries):
         try:
             with socket.socket() as s:
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 s.bind(("127.0.0.1", port))
             return
         except OSError:
             time.sleep(delay)
-    raise RuntimeError(f"Port {port} was not freed after {retries * delay:.1f}s")
+    raise RuntimeError(
+        f"Port {port} was not freed after {retries * delay:.1f}s — "
+        "port may still be in TIME_WAIT; increase retries or delay"
+    )
 
 
 def _stop_server(proc: subprocess.Popen, *, timeout: float = 5.0) -> None:
