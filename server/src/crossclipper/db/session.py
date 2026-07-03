@@ -17,5 +17,9 @@ def init_db(engine: Engine) -> None:
 
 def get_session(request: Request) -> Iterator[Session]:
     with Session(request.app.state.engine) as session:
-        yield session
-        session.commit()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
