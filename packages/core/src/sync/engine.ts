@@ -133,6 +133,8 @@ export class SyncEngine {
     const buffered = this.buffer;
     this.buffer = [];
     this.syncing = false;
+    // If stop() raced in during the await, do not go live.
+    if (this.stopped) return;
     for (const e of buffered) this.apply(e);
     this.startPing();
     this.emit({ type: "status", status: "live" });

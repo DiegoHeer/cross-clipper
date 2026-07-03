@@ -1,6 +1,8 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from typing import Callable
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,12 +23,22 @@ from crossclipper.protocol import version_ok
 from crossclipper.realtime import router as realtime_router
 from crossclipper.realtime.hub import Hub
 
+logger = logging.getLogger(__name__)
+
 
 def _prune(engine, settings) -> None:
     cutoff = utcnow() - timedelta(days=settings.tombstone_retention_days)
     with Session(engine) as session:
         ItemRepo(session).prune_tombstones(cutoff)
         session.commit()
+
+
+def _safe_prune(prune_fn: Callable[[], None]) -> None:
+    """Call prune_fn, swallowing and logging any exception so the loop survives."""
+    try:
+        prune_fn()
+    except Exception:
+        logger.exception("daily prune failed; will retry next cycle")
 
 
 @asynccontextmanager
@@ -36,7 +48,7 @@ async def _lifespan(app):
     async def daily():
         while True:
             await asyncio.sleep(24 * 3600)
-            _prune(app.state.engine, app.state.settings)
+            _safe_prune(lambda: _prune(app.state.engine, app.state.settings))
 
     task = asyncio.create_task(daily())
     yield
