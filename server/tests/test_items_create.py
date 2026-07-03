@@ -1,4 +1,5 @@
 """Tests for POST /api/v1/items — kinds, size cap, ULID idempotency, target_device_id."""
+import pytest
 from ulid import ULID
 
 from helpers import auth_headers, register_and_login
@@ -100,3 +101,79 @@ def test_target_device_id_revoked_device_rejected(client):
                     headers=auth_headers(token2))
     assert r.status_code == 422
     assert r.json()["code"] == "unknown_device"
+
+
+# ---------------------------------------------------------------------------
+# Finding 1: cross-user ULID collision → must 422 id_conflict, not 500
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def multi_user_client(tmp_path):
+    """App with allow_registration=True so two real users can register."""
+    from crossclipper.config import Settings
+    from crossclipper.main import create_app
+    from fastapi.testclient import TestClient
+
+    settings = Settings(secret_key="test-secret", data_dir=tmp_path,
+                        allow_registration=True)
+    with TestClient(create_app(settings)) as c:
+        yield c
+
+
+def test_cross_user_ulid_collision_returns_422(multi_user_client):
+    """User B posting the same explicit ULID that user A already holds → 422 id_conflict."""
+    c = multi_user_client
+    shared_id = str(ULID())
+
+    token_a, _ = register_and_login(
+        c, email="alice@example.com", password="alice-pw1!", device_name="alice-device")
+    token_b, _ = register_and_login(
+        c, email="bob@example.com", password="bob-pw1!", device_name="bob-device")
+
+    # User A creates item with explicit ULID — must succeed
+    r_a = c.post("/api/v1/items",
+                 json={"kind": "text", "body": "alice-content", "id": shared_id},
+                 headers=auth_headers(token_a))
+    assert r_a.status_code == 201
+    assert r_a.json()["body"] == "alice-content"
+
+    # User B posts the same ULID — must return 422 id_conflict, not 500
+    r_b = c.post("/api/v1/items",
+                 json={"kind": "text", "body": "bob-content", "id": shared_id},
+                 headers=auth_headers(token_b))
+    assert r_b.status_code == 422
+    assert r_b.json()["code"] == "id_conflict"
+    # Must not leak alice's item content
+    assert "alice-content" not in str(r_b.json())
+
+    # User A's item is unchanged
+    r_check = c.get(f"/api/v1/items/{shared_id}", headers=auth_headers(token_a))
+    # GET not yet implemented — verify via creating again (idempotent replay)
+    r_replay = c.post("/api/v1/items",
+                      json={"kind": "text", "body": "alice-content", "id": shared_id},
+                      headers=auth_headers(token_a))
+    assert r_replay.status_code == 200  # idempotent replay
+    assert r_replay.json()["body"] == "alice-content"
+
+
+# ---------------------------------------------------------------------------
+# Finding 2: replay with differing payload must return EXISTING item unchanged
+# ---------------------------------------------------------------------------
+
+def test_idempotent_replay_differing_payload_returns_original(client):
+    """POST id X body 'original' → 201; POST id X body 'changed' → 200 with 'original'."""
+    token, _ = register_and_login(client)
+    item_id = str(ULID())
+
+    r1 = client.post("/api/v1/items",
+                     json={"kind": "text", "body": "original", "id": item_id},
+                     headers=auth_headers(token))
+    assert r1.status_code == 201
+    assert r1.json()["body"] == "original"
+
+    r2 = client.post("/api/v1/items",
+                     json={"kind": "text", "body": "changed", "id": item_id},
+                     headers=auth_headers(token))
+    assert r2.status_code == 200
+    assert r2.json()["body"] == "original"  # existing item returned unchanged
+    assert r2.json()["id"] == item_id

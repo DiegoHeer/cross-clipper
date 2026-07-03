@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Request, Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from ulid import ULID
 
@@ -45,12 +46,17 @@ async def create_item(payload: ItemIn, request: Request, response: Response,
             response.status_code = 200  # idempotent replay
             return ItemOut.model_validate(existing)
 
-    item = repo.create(
-        id=payload.id or str(ULID()),
-        user_id=ctx.user_id,
-        origin_device_id=ctx.device_id,
-        kind=payload.kind.value,
-        body=payload.body,
-        target_device_id=payload.target_device_id,
-    )
+    try:
+        item = repo.create(
+            id=payload.id or str(ULID()),
+            user_id=ctx.user_id,
+            origin_device_id=ctx.device_id,
+            kind=payload.kind.value,
+            body=payload.body,
+            target_device_id=payload.target_device_id,
+        )
+    except IntegrityError:
+        # The id is already held by another user — never leak that item's existence.
+        raise AppError(422, "id_conflict",
+                       "the supplied id is already in use; omit id to let the server mint one")
     return ItemOut.model_validate(item)

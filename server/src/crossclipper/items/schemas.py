@@ -22,7 +22,7 @@ class ItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    kind: str
+    kind: ItemKind
     body: str
     origin_device_id: str
     target_device_id: str | None
