@@ -41,4 +41,4 @@ CI runs lint + tests on every PR. The build proceeds in phases (see the system s
 
 ## License
 
-TBD.
+[AGPL-3.0-or-later](LICENSE). You can use, modify, and self-host CrossClipper freely; if you run a modified version as a network service, you must make your modified source available to its users.

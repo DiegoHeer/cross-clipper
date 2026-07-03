@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/server"
+    schedule:
+      interval: "weekly"
+    groups:
+      server-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # npm workspaces (packages/core, clients/*) — activates once package.json lands (PR 6)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      js-dependencies:
+        patterns: ["*"]
