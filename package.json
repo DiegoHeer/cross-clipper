@@ -1,0 +1,9 @@
+{
+  "name": "crossclipper",
+  "private": true,
+  "workspaces": ["packages/*", "clients/*"],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
