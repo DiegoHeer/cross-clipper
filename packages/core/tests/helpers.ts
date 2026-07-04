@@ -51,10 +51,12 @@ export class FakeServer {
   listDelayMs = 0;
   listPageLimit = 100;                                   // override to force pagination
   rejectListWith: { status: number; code: string } | null = null; // reject GET /items once
+  alwaysRejectListWith: { status: number; code: string } | null = null; // reject GET /items until cleared
   failNextCreates = 0;                                   // throw TypeError n times
   rejectNextCreateWith: { status: number; code: string } | null = null;
   postAttempts = 0;
-  listCallCount = 0;                                     // how many GET /items calls served
+  listCallCount = 0;                                     // how many GET /items calls served (non-rejected)
+  listAttempts = 0;                                      // how many GET /items calls attempted (all)
   private seq = 0;
   // Monotonic sync_seq: assigned on create, re-assigned on delete (mirrors server repo.py).
   // Stored per item-id so deleteItem can bump it without touching Item type.
@@ -108,6 +110,11 @@ export class FakeServer {
 
     if (url.pathname === "/api/v1/items" && method === "GET") {
       if (this.listDelayMs) await sleep(this.listDelayMs);
+      this.listAttempts++;
+      if (this.alwaysRejectListWith) {
+        const r = this.alwaysRejectListWith;
+        return json(r.status, { code: r.code, message: r.code });
+      }
       if (this.rejectListWith) {
         const r = this.rejectListWith;
         this.rejectListWith = null;
