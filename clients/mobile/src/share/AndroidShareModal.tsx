@@ -30,8 +30,6 @@ type Props = NativeStackScreenProps<RootStackParamList, "AndroidShare">;
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function AndroidShareModal({ route, navigation }: Props): React.JSX.Element | null {
-  if (Platform.OS !== "android") return null;
-
   const { send, devices, selfDeviceId } = useSync();
   const { shared } = route.params;
 
@@ -49,7 +47,8 @@ export function AndroidShareModal({ route, navigation }: Props): React.JSX.Eleme
     async (input: SendDirectInput): Promise<SendDirectResult> => {
       try {
         await send(input.kind, input.body, input.targetDeviceId);
-        return { status: "sent", item: {} };
+        // item is not used by ShareSheet; omit the stub to keep the type honest.
+        return { status: "sent" };
       } catch {
         return {
           status: "queued",
@@ -59,6 +58,11 @@ export function AndroidShareModal({ route, navigation }: Props): React.JSX.Eleme
     },
     [send],
   );
+
+  // Platform guard AFTER hooks (Rules of Hooks: no early return before hooks).
+  // This screen is not registered in the navigator on iOS, so this branch is
+  // belt-and-suspenders only.
+  if (Platform.OS !== "android") return null;
 
   return (
     <Modal
