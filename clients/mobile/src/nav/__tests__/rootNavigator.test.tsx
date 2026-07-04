@@ -109,8 +109,8 @@ describe("RootNavigator", () => {
     fireEvent.press(getAllByText("Settings")[0]!);
 
     await waitFor(() => {
-      // Settings screen shows "Configuration coming soon"
-      expect(getByText("Configuration coming soon")).toBeTruthy();
+      // Settings screen renders section headers (Task 9 full implementation)
+      expect(getByText("APPEARANCE")).toBeTruthy();
     });
   });
 });
