@@ -6,6 +6,8 @@
  *  - authRequired → Onboarding renders at sign-in step (server pre-filled, no retry loop)
  *  - authed snapshot → main app (RootNavigator) renders, no Onboarding
  *  - latched gate: signing in (authed broadcast) does NOT unmount Onboarding before step 3
+ *  - ready gate: authed cold-start never flashes onboarding (ready=false→true,authed=true)
+ *  - ready gate: unauthed cold-start shows onboarding exactly when ready=true
  */
 import React from "react";
 import { render, act } from "@testing-library/react-native";
@@ -25,6 +27,7 @@ const mockSnapshot = {
   failedIds: [],
   authRequired: false,
   authed: false,
+  ready: true,
 };
 
 jest.mock("../../sync/useSync", () => {
@@ -94,10 +97,11 @@ jest.mock("react-native-gesture-handler", () => {
 
 describe("onboarding root gate", () => {
   beforeEach(() => {
-    // Reset to unauthenticated by default
+    // Reset to unauthenticated-but-ready by default
     mockSnapshot.authed = false;
     mockSnapshot.authRequired = false;
     mockSnapshot.status = "stopped";
+    mockSnapshot.ready = true;
   });
 
   it("renders Onboarding when unauthenticated", async () => {
@@ -138,6 +142,47 @@ describe("onboarding root gate", () => {
     mockSnapshot.authRequired = false;
     await act(async () => { rerender(<AppRoot />); });
     // Onboarding must still be visible (not yet completed step 3)
+    expect(getByTestId("onboarding-component")).toBeTruthy();
+  });
+
+  it("ready gate (authed cold-start): snapshot starts {ready:false,authed:false} then transitions to {ready:true,authed:true} — onboarding NEVER renders, RootNavigator appears", async () => {
+    // Initial state: not ready yet, default false for authed (the race scenario)
+    mockSnapshot.ready = false;
+    mockSnapshot.authed = false;
+
+    const { queryByTestId, getByTestId, rerender } = render(<AppRoot />);
+    await act(async () => {});
+
+    // Before ready: nothing should be latched — neither onboarding nor root nav
+    expect(queryByTestId("onboarding-component")).toBeNull();
+
+    // doWake() completes: ready=true, authed=true (real auth state)
+    mockSnapshot.ready = true;
+    mockSnapshot.authed = true;
+    await act(async () => { rerender(<AppRoot />); });
+
+    // Onboarding must NEVER have rendered — RootNavigator is now visible
+    expect(queryByTestId("onboarding-component")).toBeNull();
+    expect(getByTestId("root-navigator")).toBeTruthy();
+  });
+
+  it("ready gate (unauthed cold-start): snapshot starts {ready:false,authed:false} then transitions to {ready:true,authed:false} — onboarding renders exactly then", async () => {
+    // Initial state: not ready yet
+    mockSnapshot.ready = false;
+    mockSnapshot.authed = false;
+
+    const { queryByTestId, getByTestId, rerender } = render(<AppRoot />);
+    await act(async () => {});
+
+    // Before ready: nothing shown
+    expect(queryByTestId("onboarding-component")).toBeNull();
+
+    // doWake() completes with no auth
+    mockSnapshot.ready = true;
+    mockSnapshot.authed = false;
+    await act(async () => { rerender(<AppRoot />); });
+
+    // Now onboarding must be visible
     expect(getByTestId("onboarding-component")).toBeTruthy();
   });
 });

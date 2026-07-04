@@ -374,4 +374,50 @@ describe("SyncController", () => {
       expect(onChange).toHaveBeenCalled();
     });
   });
+
+  describe("ready flag", () => {
+    it("starts false and becomes true after wake() with stored auth", async () => {
+      const fetchFn = jest.fn().mockResolvedValue(makeItemsResponse([]));
+      const ctrl = new SyncController({ storage, socketFactory, fetchFn });
+
+      expect(ctrl.snapshot().ready).toBe(false);
+
+      await ctrl.wake();
+
+      expect(ctrl.snapshot().ready).toBe(true);
+      expect(ctrl.snapshot().authed).toBe(true);
+    });
+
+    it("starts false and becomes true after wake() with no stored auth", async () => {
+      // Use fresh storage without auth to get the unauthenticated path
+      const emptyStorage = new MemoryStorage();
+      const fetchFn = jest.fn();
+      const ctrl = new SyncController({ storage: emptyStorage, socketFactory, fetchFn });
+
+      expect(ctrl.snapshot().ready).toBe(false);
+
+      await ctrl.wake();
+
+      expect(ctrl.snapshot().ready).toBe(true);
+      expect(ctrl.snapshot().authed).toBe(false);
+    });
+
+    it("ready stays true across sleep/wake cycles (not reset by sleep)", async () => {
+      const fetchFn = jest.fn().mockResolvedValue(makeItemsResponse([]));
+      const ctrl = new SyncController({ storage, socketFactory, fetchFn });
+
+      await ctrl.wake();
+      expect(ctrl.snapshot().ready).toBe(true);
+
+      // Sleep resets the engine but must not reset ready
+      ctrl.sleep();
+      expect(ctrl.snapshot().ready).toBe(true);
+
+      // Second wake cycle: ready must remain true
+      const fakeSocket2 = makeFakeSocket();
+      socketFactory.mockReturnValue(fakeSocket2.like);
+      await ctrl.wake();
+      expect(ctrl.snapshot().ready).toBe(true);
+    });
+  });
 });

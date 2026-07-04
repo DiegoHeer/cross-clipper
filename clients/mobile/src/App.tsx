@@ -27,21 +27,21 @@ import { Onboarding } from "./onboarding/Onboarding";
 // ─── Inner gate (inside SyncProvider) ────────────────────────────────────────
 
 function AppGate(): React.JSX.Element {
-  const { authed, authRequired, baseUrl, onSignedIn } = useSync();
+  const { ready, authed, authRequired, baseUrl, onSignedIn } = useSync();
 
   // Latched onboarding flag — mirrors extension App.tsx exactly.
-  // null = auth not yet resolved; true = show onboarding; false = skip onboarding.
+  // null = auth not yet resolved (ready=false); true = show onboarding; false = skip onboarding.
   const [onboarding, setOnboarding] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Latch once: the first time `authed` is determined (either true or false).
-    // After that we only update via onComplete (user finishes the 3-step flow).
-    // SyncController emits after doWake() resolves — authedFlag is then stable.
-    if (onboarding === null) {
+    // Gate on ready: only latch once doWake() has completed its first auth
+    // resolution. Without this guard the default authed=false fires immediately
+    // and an authed user sees onboarding flash.
+    if (ready && onboarding === null) {
       setOnboarding(!authed);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed]);
+  }, [ready, authed]);
 
   // authRequired always overrides: show onboarding in reauth mode
   if (authRequired) {

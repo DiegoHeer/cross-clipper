@@ -66,6 +66,13 @@ export interface SyncSnapshot {
   status: SyncStatus;
   items: Item[];
   devices: Device[];
+  /**
+   * True once doWake() has completed its FIRST auth resolution (either path:
+   * no-auth or authed). False before that point so the UI can gate on it.
+   * Stays true for the lifetime of the controller — sleep/wake cycles do NOT
+   * reset it.
+   */
+  ready: boolean;
   /** Whether the user is authenticated (auth loaded from storage). */
   authed: boolean;
   /** The base URL of the configured server (null when unauthenticated). */
@@ -94,6 +101,11 @@ export class SyncController {
   private listeners: Array<() => void> = [];
   /** Whether we have successfully loaded auth from storage (or completed sign-in). */
   private authedFlag = false;
+  /**
+   * Set to true after doWake() completes its FIRST auth resolution.
+   * Never reset to false — sleep/wake cycles must not re-hide the gate.
+   */
+  private readyFlag = false;
 
   constructor(private readonly deps: SyncControllerDeps) {
     this.feed = new FeedStore(deps.storage);
@@ -150,10 +162,12 @@ export class SyncController {
     this.auth = await this.loadAuth();
     if (!this.auth) {
       this.authedFlag = false;
+      this.readyFlag = true;
       this.emit();
       return;
     }
     this.authedFlag = true;
+    this.readyFlag = true;
     this.emit();
     const { baseUrl, token } = this.auth;
 
@@ -292,6 +306,7 @@ export class SyncController {
       status: this.status,
       items: this.feed.list(),
       devices: [...this.devices],
+      ready: this.readyFlag,
       authed: this.authedFlag,
       baseUrl: this.auth?.baseUrl ?? null,
       selfDeviceId: this.auth?.deviceId ?? null,
