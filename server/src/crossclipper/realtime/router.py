@@ -19,7 +19,11 @@ async def ws_endpoint(websocket: WebSocket, token: str = Query(...)) -> None:
 
     hub = websocket.app.state.hub
     await websocket.accept()
-    hub.add(ctx.user_id, ctx.device_id, websocket)
+    transition_add = hub.add(ctx.user_id, ctx.device_id, websocket)
+    if transition_add:
+        # Exclude the connecting socket: it caused the transition and does not need
+        # to be notified about its own coming-online event.
+        await hub.broadcast(ctx.user_id, {"type": "device_changed"}, exclude=websocket)
     try:
         while True:
             msg = await websocket.receive_json()
@@ -30,4 +34,9 @@ async def ws_endpoint(websocket: WebSocket, token: str = Query(...)) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        hub.remove(ctx.user_id, ctx.device_id, websocket)
+        transition_remove = hub.remove(ctx.user_id, ctx.device_id, websocket)
+        if transition_remove:
+            try:
+                await hub.broadcast(ctx.user_id, {"type": "device_changed"})
+            except Exception:  # noqa: BLE001 — broadcast failure must not mask cleanup
+                pass

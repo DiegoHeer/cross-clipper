@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiClient } from "../src/api/client";
-import { Outbox, type OutboxEvent } from "../src/outbox";
+import { Outbox, type OutboxEvent, type OutboxEntry } from "../src/outbox";
 import { MemoryStorage } from "../src/storage";
+import type { Item } from "../src/types";
 import { FakeServer, sleep } from "./helpers";
 
 function makeOutbox(server: FakeServer, storage = new MemoryStorage()) {
@@ -91,6 +92,27 @@ describe("Outbox", () => {
 
     expect(server.items.map((i) => i.body)).toEqual(["one", "two"]);
     expect(second.outbox.pending()).toEqual([]);
+  });
+
+  it("carries the notification target through to createItem and persists it", async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const client = {
+      createItem: async (input: Record<string, unknown>) => {
+        created.push(input);
+        return { id: input["id"], kind: input["kind"], body: input["body"] } as Item;
+      },
+    } as unknown as ApiClient;
+    const storage = new MemoryStorage();
+    const outbox = new Outbox({ client, storage, ulidFn: () => "01TARGETULID000000000000000" });
+    await outbox.load();
+    await outbox.send("text", "ping", "device-b");
+    await outbox.flush();
+    expect(created[0]).toMatchObject({ body: "ping", target_device_id: "device-b" });
+
+    // untargeted sends omit the field entirely
+    await outbox.send("text", "silent one");
+    await outbox.flush();
+    expect("target_device_id" in created[1]!).toBe(false);
   });
 
   it("halts on 401, accepts sends while halted, and resumes after re-auth", async () => {

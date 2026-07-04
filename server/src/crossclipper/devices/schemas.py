@@ -11,6 +11,7 @@ class DeviceOut(BaseModel):
     platform: str
     last_seen_at: datetime
     created_at: datetime
+    online: bool
 
 
 class DevicesOut(BaseModel):

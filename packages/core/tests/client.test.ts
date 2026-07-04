@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiClient, ApiError, NetworkError } from "../src/api/client";
+import type { HealthOut } from "../src";
 
 const json = (status: number, data: unknown) =>
   new Response(JSON.stringify(data), {
@@ -52,5 +53,38 @@ describe("ApiClient", () => {
     const fetchFn = async () => new Response(null, { status: 204 });
     const client = new ApiClient({ baseUrl: "http://srv", fetchFn: fetchFn as typeof fetch });
     await expect(client.deleteItem("01A")).resolves.toBeUndefined();
+  });
+});
+
+describe("health", () => {
+  it("GETs root /health without the /api/v1 prefix", async () => {
+    const calls: string[] = [];
+    const fetchFn = (async (url: RequestInfo | URL) => {
+      calls.push(String(url));
+      return new Response(
+        JSON.stringify({ status: "ok", app: "crossclipper", version: "0.1.0", registration_open: true }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    const client = new ApiClient({ baseUrl: "http://s", fetchFn });
+    const out: HealthOut = await client.health();
+    expect(calls).toEqual(["http://s/health"]);
+    expect(out.app).toBe("crossclipper");
+    expect(out.registration_open).toBe(true);
+  });
+
+  it("maps transport failure to NetworkError and 503 to ApiError", async () => {
+    const boom = (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof fetch;
+    await expect(new ApiClient({ baseUrl: "http://s", fetchFn: boom }).health()).rejects.toBeInstanceOf(
+      NetworkError,
+    );
+    const sick = (async () =>
+      new Response(JSON.stringify({ code: "unhealthy", message: "db" }), { status: 503 })) as typeof fetch;
+    await expect(new ApiClient({ baseUrl: "http://s", fetchFn: sick }).health()).rejects.toMatchObject({
+      status: 503,
+      code: "unhealthy",
+    });
   });
 });
