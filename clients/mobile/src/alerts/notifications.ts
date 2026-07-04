@@ -9,6 +9,7 @@
  * notifications sink so tests stay pure (see AlertManager.ts deps interface).
  */
 import * as ExpoNotifications from "expo-notifications";
+import type { PermissionResponse } from "expo-modules-core";
 import type { NotificationPayload } from "./AlertManager";
 
 let permissionRequested = false;
@@ -17,9 +18,11 @@ async function ensurePermission(): Promise<boolean> {
   if (permissionRequested) return true;
   permissionRequested = true;
   const result = await ExpoNotifications.requestPermissionsAsync();
-  // status is a PermissionStatus string; "granted" means permission was granted.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (result as any).status === "granted" || (result as any).granted === true;
+  // Cast to PermissionResponse (from expo-modules-core) to access the typed
+  // `granted` field — expo-notifications' NotificationPermissionsStatus extends
+  // PermissionResponse from `expo` which has a broken d.ts re-export in this
+  // version, causing the field to be unresolved without the explicit cast.
+  return (result as unknown as PermissionResponse).granted;
 }
 
 /**
