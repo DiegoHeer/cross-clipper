@@ -55,6 +55,14 @@ export function CaptureTab() {
     await savePrefs({ captureToastEnabled: next.captureToastEnabled });
   };
 
+  const setToastDuration = async (seconds: number) => {
+    if (!prefs) return;
+    const ms = Math.round(Math.max(1000, Math.min(10000, seconds * 1000)));
+    const next = { ...prefs, captureToastDurationMs: ms };
+    setPrefs(next);
+    await savePrefs({ captureToastDurationMs: ms });
+  };
+
   const toggleAutostart = async () => {
     if (!prefs) return;
     const next = { ...prefs, launchAtLogin: !prefs.launchAtLogin };
@@ -114,6 +122,17 @@ export function CaptureTab() {
             onChange={() => void toggleToast()}
           />
           Show capture toast
+        </label>
+        <label className="pref-row">
+          Toast duration (seconds)
+          <input
+            type="number"
+            aria-label="Toast duration (seconds)"
+            min={1}
+            max={10}
+            value={Math.round(prefs.captureToastDurationMs / 1000)}
+            onChange={(e) => void setToastDuration(Number(e.target.value))}
+          />
         </label>
       </section>
 

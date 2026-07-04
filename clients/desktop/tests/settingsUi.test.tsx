@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Store } from "./tauriMock";
@@ -194,5 +194,21 @@ describe("Settings — Capture tab", () => {
     // Click again to re-enable
     await userEvent.click(loginToggle);
     expect(loginToggle).toBeChecked();
+  });
+
+  it("toast duration input persists captureToastDurationMs", async () => {
+    const store = new Store();
+    __setStore(store);
+    const { CaptureTab } = await import("../src/main/settings/CaptureTab");
+    render(<CaptureTab />);
+    const durationInput = await screen.findByRole("spinbutton", { name: /toast duration/i });
+    // Default is 5 seconds (5000ms)
+    expect(durationInput).toHaveValue(5);
+    // Change to 8 seconds via a direct change event (avoids multi-keypress side-effects)
+    fireEvent.change(durationInput, { target: { value: "8" } });
+    // Allow async savePrefs to complete
+    await new Promise((r) => setTimeout(r, 10));
+    const raw = await store.get("cc.prefs");
+    expect(JSON.parse(raw as string)).toMatchObject({ captureToastDurationMs: 8000 });
   });
 });

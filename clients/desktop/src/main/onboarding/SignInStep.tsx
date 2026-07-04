@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiClient } from "@crossclipper/core";
 import { CLIENT_VERSION } from "../../background/controller";
 import { requestBackground } from "../../shared/bridge";
@@ -33,8 +33,18 @@ export function SignInStep({ baseUrl, mode, notice, onDone }: SignInStepProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [deviceName, setDeviceName] = useState("This PC");
+  // Track whether the user has manually edited the device name field.
+  const deviceNameTouched = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Populate the device name from the OS hostname on mount, but only if the
+  // user hasn't typed in the field yet (guard against clobbering user input).
+  useEffect(() => {
+    void suggestDeviceName().then((name) => {
+      if (!deviceNameTouched.current) setDeviceName(name);
+    });
+  }, []);
 
   const heading = mode === "create" ? "Create your account" : "Sign in";
   const cta = mode === "create" ? "Create account" : "Sign in";
@@ -91,7 +101,10 @@ export function SignInStep({ baseUrl, mode, notice, onDone }: SignInStepProps) {
         <input
           type="text"
           value={deviceName}
-          onChange={(e) => setDeviceName(e.target.value)}
+          onChange={(e) => {
+            deviceNameTouched.current = true;
+            setDeviceName(e.target.value);
+          }}
         />
       </label>
       {error && (

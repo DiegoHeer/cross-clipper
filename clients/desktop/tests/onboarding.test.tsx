@@ -124,6 +124,53 @@ describe("Onboarding", () => {
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
   });
 
+  it("suggestDeviceName auto-fills device name from OS hostname (tauriMock returns 'test-host')", async () => {
+    const { fetchFn } = fetchStub();
+    vi.stubGlobal("fetch", fetchFn);
+    const { Onboarding } = await import("../src/main/onboarding/Onboarding");
+    render(<Onboarding onComplete={() => {}} />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText(/clip.example.com/),
+      "http://127.0.0.1:8080",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /next/i }));
+
+    // Step 2 — wait for SignInStep to render and suggestDeviceName to resolve.
+    // The tauriMock stubs plugin-os hostname() to return "test-host".
+    await screen.findByRole("heading", { name: /sign in/i });
+    const nameField = await screen.findByLabelText(/device name/i);
+    expect(nameField).toHaveValue("test-host");
+    vi.unstubAllGlobals();
+  });
+
+  it("suggestDeviceName does not clobber device name if user has already typed", async () => {
+    // The field initialises to "This PC" synchronously, then the useEffect fires.
+    // If the user edits the field before the promise resolves the touched guard
+    // must prevent the effect from overwriting the user's input.
+    const { fetchFn } = fetchStub();
+    vi.stubGlobal("fetch", fetchFn);
+    const { Onboarding } = await import("../src/main/onboarding/Onboarding");
+    render(<Onboarding onComplete={() => {}} />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText(/clip.example.com/),
+      "http://127.0.0.1:8080",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /next/i }));
+
+    await screen.findByRole("heading", { name: /sign in/i });
+    const nameField = await screen.findByLabelText(/device name/i);
+    // Immediately overwrite with custom text (marks as touched)
+    await userEvent.clear(nameField);
+    await userEvent.type(nameField, "My Custom Name");
+    // Wait for any pending effects
+    await new Promise((r) => setTimeout(r, 20));
+    // Touched guard: user input must be preserved, not overwritten by suggest
+    expect(nameField).toHaveValue("My Custom Name");
+    vi.unstubAllGlobals();
+  });
+
   it("shows insecure http warning for public http servers in step 1", async () => {
     const { fetchFn } = fetchStub();
     vi.stubGlobal("fetch", fetchFn);
