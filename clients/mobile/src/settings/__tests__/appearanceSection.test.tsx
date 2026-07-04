@@ -39,9 +39,7 @@ describe("AppearanceSection", () => {
     expect(swatches.length).toBeGreaterThan(3);
   });
 
-  it("pressing an accent swatch calls setAppearance with the new accent", async () => {
-    // We test this by checking that the AppearanceSection renders swatch buttons
-    // and pressing them updates the theme.
+  it("pressing an accent swatch updates the accent-preview background to the new color", async () => {
     const { findByTestId } = render(
       <Wrapper>
         <AppearanceSection />
@@ -49,10 +47,23 @@ describe("AppearanceSection", () => {
     );
     await act(async () => {});
 
-    // The amber swatch should be there by default
-    const amberSwatch = await findByTestId("swatch-#d97706");
-    fireEvent.press(amberSwatch);
-    // No crash = pass. The hook update will propagate via ThemeProvider.
+    // Default accent is amber — press the blue swatch to change it
+    const blueSwatch = await findByTestId("swatch-#2563eb");
+    fireEvent.press(blueSwatch);
+
+    // After pressing blue, the accent-preview background must be blue
+    await waitFor(async () => {
+      const preview = await findByTestId("accent-preview");
+      const bgColor = preview.props.style
+        ? (Array.isArray(preview.props.style) ? preview.props.style : [preview.props.style])
+            .reduce(
+              (acc: Record<string, unknown>, s: Record<string, unknown> | null) =>
+                s ? { ...acc, ...s } : acc,
+              {},
+            ).backgroundColor
+        : undefined;
+      expect(bgColor).toBe("#2563eb");
+    });
   });
 
   it("selected accent preview uses accentForeground for text color", async () => {

@@ -335,6 +335,27 @@ describe("SyncController", () => {
     });
   });
 
+  describe("doWake device-cache preload", () => {
+    it("exposes cached cc.devices immediately after wake, before engine emits devices_changed", async () => {
+      // Pre-populate cc.devices in storage before constructing the controller
+      const cachedDevice = makeDevice("cached-d1");
+      await storage.set("cc.devices", JSON.stringify([cachedDevice]));
+
+      // fetchFn never returns a devices response — engine won't emit devices_changed
+      const fetchFn = jest.fn().mockResolvedValue(makeItemsResponse([]));
+
+      const ctrl = new SyncController({ storage, socketFactory, fetchFn });
+
+      // wake() must load the cache before returning
+      await ctrl.wake();
+
+      // Without waiting for socket open or engine fetch, snapshot should already have the device
+      const snap = ctrl.snapshot();
+      expect(snap.devices).toHaveLength(1);
+      expect(snap.devices[0]!.id).toBe("cached-d1");
+    });
+  });
+
   describe("onChange(cb)", () => {
     it("notifies listener when feed changes", async () => {
       const item = makeItem();
