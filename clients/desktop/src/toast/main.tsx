@@ -1,5 +1,6 @@
-import { StrictMode, useState } from "react";
+import { StrictMode, useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import { listen } from "@tauri-apps/api/event";
 import { subscribeEvents, requestBackground } from "../shared/bridge";
 import { initTheme } from "../theme/theme";
 import { Toast } from "./Toast";
@@ -13,9 +14,12 @@ const SYNCED_COUNTDOWN_MS = 5_000;
 // Tauri's invoke is a global in the webview context.
 declare function invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
 
-function ToastApp() {
+export function ToastApp() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [countdownMs, setCountdownMs] = useState(0);
+  // Monotonic counter incremented on each new capture arrival so the
+  // countdown effect re-runs even when countdownMs value hasn't changed.
+  const [captureId, setCaptureId] = useState(0);
 
   const dismiss = () => {
     setToast(null);
@@ -30,20 +34,41 @@ function ToastApp() {
     void requestBackground({ type: "undo_capture", outboxId });
   };
 
-  // Subscribe on first render. useState initialiser runs once (no cleanup
-  // needed for the toast window — it is shown/hidden, never remounted).
-  useState(() => {
-    void subscribeEvents((e) => {
-      if (e.type === "capture_result") {
-        const newToast: ToastState = {
-          state: e.state,
-          snippet: e.snippet,
-          outboxId: e.outboxId,
-        };
-        setToast(newToast);
-        setCountdownMs(e.state === "synced" ? SYNCED_COUNTDOWN_MS : 0);
-      } else if (e.type === "toast_update") {
-        // Background may flip "queued" → "synced" or confirm "cancelled".
+  // Listen directly on "cc:capture-result" — the channel background/main.tsx
+  // emits via onCaptureResult. This is a raw Tauri event, NOT the cc:evt bus.
+  useEffect(() => {
+    let live = true;
+    const p = listen<{
+      state: "synced" | "queued" | "sensitive" | "empty" | "unsupported" | "cancelled";
+      snippet?: string;
+      outboxId?: string;
+    }>("cc:capture-result", ({ payload }) => {
+      if (!live) return;
+      setToast({
+        state: payload.state,
+        snippet: payload.snippet,
+        outboxId: payload.outboxId,
+      });
+      setCountdownMs(payload.state === "synced" ? SYNCED_COUNTDOWN_MS : 0);
+      setCaptureId((n) => n + 1);
+      void invoke("show_window", { label: "toast" });
+    });
+    return () => {
+      live = false;
+      p.then((u) => {
+        if (u) u();
+      });
+    };
+  }, []);
+
+  // Subscribe to toast_update events broadcast on the cc:evt channel.
+  useEffect(() => {
+    let live = true;
+    const p = subscribeEvents((e) => {
+      if (!live) return;
+      if (e.type === "toast_update") {
+        // Compute the outboxId match once so both setToast and setCountdownMs
+        // act on the same decision (avoids unconditional countdown reset).
         setToast((prev) => {
           if (!prev || prev.outboxId !== e.outboxId) return prev;
           if (e.state === "cancelled") {
@@ -51,14 +76,20 @@ function ToastApp() {
             void invoke("hide_window", { label: "toast" });
             return null;
           }
+          if (e.state === "synced") {
+            setCountdownMs(SYNCED_COUNTDOWN_MS);
+          }
           return { ...prev, state: e.state };
         });
-        if (e.state === "synced") {
-          setCountdownMs(SYNCED_COUNTDOWN_MS);
-        }
       }
     });
-  });
+    return () => {
+      live = false;
+      p.then((u) => {
+        if (u) u();
+      });
+    };
+  }, []);
 
   if (!toast) return null;
 
@@ -66,6 +97,7 @@ function ToastApp() {
     <Toast
       toast={toast}
       countdownMs={countdownMs}
+      captureId={captureId}
       onUndo={handleUndo}
       onDismiss={dismiss}
     />
