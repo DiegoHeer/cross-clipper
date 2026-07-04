@@ -260,4 +260,61 @@ describe("Outbox", () => {
     expect(server.items.map((i) => i.body)).toEqual(["itemA", "itemB"]);
     expect(outbox.pending()).toEqual([]);
   });
+
+  // ---------------------------------------------------------------------------
+  // enqueue() tests — pre-assigned id (App Group drain path)
+  // ---------------------------------------------------------------------------
+
+  it("enqueue preserves the given id through to createItem's POST body", async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const client = {
+      createItem: async (input: Record<string, unknown>) => {
+        created.push(input);
+        return { id: input["id"], kind: input["kind"], body: input["body"] } as Item;
+      },
+    } as unknown as ApiClient;
+    const storage = new MemoryStorage();
+    const outbox = new Outbox({ client, storage });
+    await outbox.load();
+
+    const MIRROR_ID = "01MIRRORUL1D0000000000000000";
+    await outbox.enqueue({ id: MIRROR_ID, kind: "text", body: "from-mirror" });
+    await outbox.flush();
+
+    expect(created).toHaveLength(1);
+    expect(created[0]!["id"]).toBe(MIRROR_ID);
+    expect(created[0]!["body"]).toBe("from-mirror");
+  });
+
+  it("duplicate enqueue with the same id is a no-op (idempotent drain)", async () => {
+    const server = new FakeServer();
+    const storage = new MemoryStorage();
+    const { outbox } = makeOutbox(server, storage);
+    await outbox.load();
+    // Stop auto-flush so we can inspect pending state before delivery
+    outbox.stop();
+
+    const MIRROR_ID = "01MIRRORUL1D0000000000000001";
+    await outbox.enqueue({ id: MIRROR_ID, kind: "text", body: "once" });
+    await outbox.enqueue({ id: MIRROR_ID, kind: "text", body: "once" }); // duplicate
+
+    expect(outbox.pending()).toHaveLength(1);
+    expect(outbox.pending()[0]!.id).toBe(MIRROR_ID);
+  });
+
+  it("normal send() is unaffected by the presence of enqueue()", async () => {
+    const server = new FakeServer();
+    const storage = new MemoryStorage();
+    const { outbox } = makeOutbox(server, storage);
+    await outbox.load();
+
+    // Regular send produces its own ULID
+    const id = await outbox.send("text", "normal");
+    await sleep(30);
+
+    expect(typeof id).toBe("string");
+    expect(id.length).toBeGreaterThan(0);
+    expect(server.items.map((i) => i.body)).toContain("normal");
+    outbox.stop();
+  });
 });

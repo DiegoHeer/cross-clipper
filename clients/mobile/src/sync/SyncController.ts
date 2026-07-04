@@ -25,6 +25,7 @@ import {
 import type { AppStateStatus } from "react-native";
 import { FeedStore } from "./feedStore";
 import { wsUrl } from "../platform/socket";
+import type { AppGroup } from "../platform/appGroup";
 
 export const CLIENT_VERSION = "0.1.0";
 const AUTH_KEY = "cc.auth";
@@ -60,6 +61,12 @@ export interface SyncControllerDeps {
   appState?: AppStateLike;
   /** Injectable alert sink (AlertManager in production, no-op in tests). */
   alertSink?: AlertSink;
+  /**
+   * App Group bridge — injected so tests don't touch native modules.
+   * Production: pass the `appGroup` singleton from platform/appGroup.
+   * When absent, drain step is skipped.
+   */
+  appGroup?: AppGroup;
 }
 
 export interface SyncSnapshot {
@@ -196,6 +203,27 @@ export class SyncController {
       onEvent: (e) => void this.onOutboxEvent(e),
     });
     await this.outbox.load();
+
+    // Drain the App Group share-extension outbox mirror into the real Outbox.
+    // Each entry carries the PRESERVED ULID from the failed extension POST —
+    // re-enqueueing with the same id is idempotent (system spec §8).
+    // Failures are isolated: a native crash must not prevent the engine from starting.
+    if (this.deps.appGroup) {
+      try {
+        const mirrored = await this.deps.appGroup.drainMainOutbox();
+        for (const entry of mirrored) {
+          await this.outbox.enqueue({
+            id: entry.id,
+            kind: entry.kind,
+            body: entry.body,
+            targetDeviceId: entry.targetDeviceId ?? null,
+          });
+        }
+      } catch {
+        // Non-fatal: native App Group unavailable or corrupt — continue.
+      }
+    }
+
     await this.engine.start();
     void this.outbox.flush();
   }
