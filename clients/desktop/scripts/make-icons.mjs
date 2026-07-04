@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const iconsDir = join(__dirname, "..", "icons");
+const iconsDir = join(__dirname, "..", "src-tauri", "icons");
 
 const crcTable = [...Array(256)].map((_, n) => {
   let c = n;
@@ -36,8 +36,8 @@ const png = (size, [r, g, b]) => {
   ihdr.writeUInt32BE(size, 0);
   ihdr.writeUInt32BE(size, 4);
   ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // color type: RGB
-  const row = Buffer.from([0, ...Array(size).fill([r, g, b]).flat()]);
+  ihdr[9] = 6; // color type: RGBA (Tauri requires alpha)
+  const row = Buffer.from([0, ...Array(size).fill([r, g, b, 255]).flat()]);
   const raw = Buffer.concat(Array(size).fill(row));
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
