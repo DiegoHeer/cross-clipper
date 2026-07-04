@@ -95,3 +95,35 @@ describe("Settings — shell and Devices tab", () => {
     expect(api.revokeDevice).toHaveBeenCalledWith("d2");
   });
 });
+
+describe("Settings — Look and General tabs", () => {
+  let fake: ReturnType<typeof makeFakeBrowser>;
+  beforeEach(() => {
+    fake = makeFakeBrowser();
+    setFakeBrowser(fake.browser);
+    localStorage.clear();
+  });
+
+  it("Look persists accent changes through saveAppearance", async () => {
+    const { LookTab } = await import("../src/popup/settings/LookTab");
+    render(<LookTab />);
+    await userEvent.click(await screen.findByRole("button", { name: /accent #2563eb/i }));
+    expect(JSON.parse(String(fake.storageData["cc.appearanceStored"]))).toMatchObject({
+      accent: "#2563eb",
+    });
+  });
+
+  it("General renders defaults (notify off, context menu on) and persists toggles", async () => {
+    const { GeneralTab } = await import("../src/popup/settings/GeneralTab");
+    render(<GeneralTab />);
+    const notify = await screen.findByRole("checkbox", { name: /notify me on new items/i });
+    const menu = screen.getByRole("checkbox", { name: /context-menu send/i });
+    expect(notify).not.toBeChecked();
+    expect(menu).toBeChecked();
+    await userEvent.click(notify);
+    expect(JSON.parse(String(fake.storageData["cc.prefs"]))).toMatchObject({
+      notifyOnNewItems: true,
+      contextMenuSend: true,
+    });
+  });
+});
