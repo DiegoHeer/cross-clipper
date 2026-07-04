@@ -9,6 +9,12 @@ export default defineConfig({
       // Tauri APIs throw outside a real window; tests use the fake (Task 5).
       "@tauri-apps/api/event": path.resolve(__dirname, "tests/tauriMock.ts"),
       "@tauri-apps/plugin-store": path.resolve(__dirname, "tests/tauriMock.ts"),
+      // Plugin stubs — no-ops in the jsdom test environment.
+      "@tauri-apps/plugin-clipboard-manager": path.resolve(
+        __dirname,
+        "tests/tauriMock.ts",
+      ),
+      "@tauri-apps/plugin-opener": path.resolve(__dirname, "tests/tauriMock.ts"),
     },
   },
   test: {
