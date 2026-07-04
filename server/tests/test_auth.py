@@ -195,6 +195,59 @@ def test_integrity_error_on_race_returns_409(tmp_path):
     assert r2.json()["code"] == "email_taken"
 
 
+# ---------------------------------------------------------------------------
+# Email format validation (EmailStr — pydantic[email])
+# ---------------------------------------------------------------------------
+
+
+def test_register_invalid_email_returns_422(tmp_path):
+    """Malformed email on register must yield structured 422, not 500."""
+    app = create_app(
+        Settings(secret_key="t", data_dir=tmp_path, allow_registration=True)
+    )
+    with TestClient(app) as c:
+        for bad_email in ("not-an-email", "missing@", "@nodomain", "plain"):
+            r = c.post(
+                "/api/v1/auth/register",
+                json={"email": bad_email, "password": "hunter22!"},
+            )
+            assert r.status_code == 422, (
+                f"expected 422 for {bad_email!r}, got {r.status_code}"
+            )
+            body = r.json()
+            assert body["code"] == "validation_error", f"bad code for {bad_email!r}"
+
+
+def test_login_invalid_email_returns_422(tmp_path):
+    """Malformed email on login must yield structured 422."""
+    app = create_app(Settings(secret_key="t", data_dir=tmp_path))
+    with TestClient(app) as c:
+        r = c.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "not-an-email",
+                "password": "hunter22!",
+                "device_name": "d",
+                "platform": "other",
+            },
+        )
+    assert r.status_code == 422
+    assert r.json()["code"] == "validation_error"
+
+
+def test_register_valid_email_still_works(tmp_path):
+    """Valid RFC-5321 email must continue to register normally."""
+    app = create_app(
+        Settings(secret_key="t", data_dir=tmp_path, allow_registration=True)
+    )
+    with TestClient(app) as c:
+        r = c.post(
+            "/api/v1/auth/register",
+            json={"email": "user+tag@sub.example.com", "password": "hunter22!"},
+        )
+    assert r.status_code == 201
+
+
 def test_old_client_version_rejected(tmp_path):
     app = create_app(
         Settings(secret_key="t", data_dir=tmp_path, min_client_version="1.0.0")
