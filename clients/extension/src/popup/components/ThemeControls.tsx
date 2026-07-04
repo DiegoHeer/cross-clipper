@@ -1,6 +1,6 @@
-import { type Appearance, type ThemeSetting } from "../../theme/theme";
+import { type Appearance, type ThemeSetting, applyAppearance } from "../../theme/theme";
 
-const ACCENT_PRESETS: string[] = [
+export const ACCENT_PRESETS: string[] = [
   "#d97706", // amber (default)
   "#2563eb", // blue
   "#16a34a", // green
@@ -17,12 +17,18 @@ const THEME_OPTIONS: { value: ThemeSetting; label: string }[] = [
   { value: "dark", label: "Dark" },
 ];
 
-interface ThemeControlsProps {
+export interface ThemeControlsProps {
   appearance: Appearance;
   onChange(a: Appearance): void;
 }
 
 export function ThemeControls({ appearance, onChange }: ThemeControlsProps) {
+  const update = (patch: Partial<Appearance>) => {
+    const next = { ...appearance, ...patch };
+    applyAppearance(next); // live preview
+    onChange(next);
+  };
+
   return (
     <div className="theme-controls">
       <fieldset className="theme-toggle">
@@ -33,7 +39,7 @@ export function ThemeControls({ appearance, onChange }: ThemeControlsProps) {
               key={value}
               className={`chip${appearance.theme === value ? " selected" : ""}`}
               aria-pressed={appearance.theme === value}
-              onClick={() => onChange({ ...appearance, theme: value })}
+              onClick={() => update({ theme: value })}
             >
               {label}
             </button>
@@ -50,7 +56,7 @@ export function ThemeControls({ appearance, onChange }: ThemeControlsProps) {
               aria-pressed={appearance.accent === color}
               className={`swatch${appearance.accent === color ? " selected" : ""}`}
               style={{ backgroundColor: color }}
-              onClick={() => onChange({ ...appearance, accent: color })}
+              onClick={() => update({ accent: color })}
             />
           ))}
         </div>
@@ -59,7 +65,7 @@ export function ThemeControls({ appearance, onChange }: ThemeControlsProps) {
           <input
             type="color"
             value={appearance.accent}
-            onChange={(e) => onChange({ ...appearance, accent: e.target.value })}
+            onChange={(e) => update({ accent: e.target.value })}
           />
         </label>
       </fieldset>

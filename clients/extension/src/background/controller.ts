@@ -227,6 +227,7 @@ export class BackgroundController {
       case "refresh":
         void this.fetchDevices().then((devices) => this.broadcast({ type: "devices", devices }));
         void this.outbox?.flush();
+        this.broadcast({ type: "snapshot", state: await this.snapshot() });
         return { ok: true };
       case "send": {
         if (!this.outbox) throw new Error("not authenticated");

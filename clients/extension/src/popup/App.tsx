@@ -9,6 +9,7 @@ import type { FeedEntry } from "./components/FeedCard";
 import { platformIcon, toDeviceView } from "../shared/model";
 import { Settings } from "./settings/Settings";
 import { useWorker } from "./useWorker";
+import { Onboarding } from "./onboarding/Onboarding";
 
 export default function App() {
   const { state, api } = useWorker();
@@ -44,6 +45,17 @@ export default function App() {
     platformIcon(deviceViews.find((d) => d.id === id)?.platform ?? "");
 
   if (!state.ready) return <div className="app" />;
+
+  if (!state.authed || state.authRequired) {
+    return (
+      <Onboarding
+        mode={state.authRequired ? "reauth" : "fresh"}
+        initialServer={state.baseUrl ?? undefined}
+        notice={state.authRequired ? "Session expired or device revoked — sign in again." : undefined}
+        onComplete={() => void api.refresh()}
+      />
+    );
+  }
 
   if (view === "settings") {
     return <Settings state={state} api={api} onBack={() => setView("feed")} />;

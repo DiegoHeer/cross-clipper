@@ -68,6 +68,15 @@ body,
   background: var(--accent); color: var(--accent-fg); border: none;
   border-radius: 999px; padding: 2px var(--space-3); cursor: pointer; font-size: 12px;
 }
+.swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); cursor: pointer; }
+.swatch[aria-pressed="true"] { border-color: var(--text); }
+.onboarding-step { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.onboarding-step label { display: flex; flex-direction: column; gap: var(--space-1); font-size: 12px; }
+.onboarding-step input { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); background: var(--surface); color: var(--text); }
+.onboarding-step > button { background: var(--accent); color: var(--accent-fg); border: none; border-radius: var(--radius-sm); padding: var(--space-2); cursor: pointer; }
+.warning { color: var(--danger); font-size: 12px; }
+.error { color: var(--danger); font-size: 12px; }
+.success { color: var(--success); font-size: 12px; }
 .settings { grid-template-rows: auto auto auto 1fr; }
 .status-card { margin: var(--space-2) var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); }
 .tabs { padding: 0 var(--space-3); }
@@ -78,3 +87,9 @@ body,
 .presence { font-size: 11px; }
 .badge { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 0 var(--space-2); font-style: normal; font-size: 10px; margin-left: var(--space-1); }
 .nudge { background: var(--danger); color: #fff; border-radius: 999px; padding: 0 var(--space-2); font-style: normal; font-size: 10px; margin-left: var(--space-1); }
+.preview-card {
+  background: var(--surface-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: var(--space-2) var(--space-3);
+  color: var(--text);
+}
+.preview-card-header { font-size: 11px; margin-bottom: var(--space-1); color: var(--text-muted); }
