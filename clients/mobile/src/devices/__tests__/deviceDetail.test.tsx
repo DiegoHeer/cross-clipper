@@ -177,6 +177,30 @@ describe("DeviceDetailScreen", () => {
     });
   });
 
+  it("Revoke button is disabled and non-triggerable when viewing the current device (self)", async () => {
+    // self-device-id matches AUTH_VALUE.deviceId, so isSelf = true
+    const self = makeDevice({ id: "self-device-id", name: "This Device" });
+    const { ctrl, mockRevokeDevice } = await makeController([self]);
+    const mockNav = { navigate: jest.fn(), goBack: jest.fn() } as unknown as Parameters<typeof DeviceDetailScreen>[0]["navigation"];
+    const mockRoute = { params: { deviceId: "self-device-id" }, key: "DeviceDetail", name: "DeviceDetail" as const };
+
+    const { getByRole } = render(
+      <TestWrapper controller={ctrl}>
+        <DeviceDetailScreen navigation={mockNav} route={mockRoute} />
+      </TestWrapper>,
+    );
+    await act(async () => {});
+
+    const revokeBtn = getByRole("button", { name: /revoke/i });
+
+    // Button must be disabled
+    expect(revokeBtn.props.disabled ?? revokeBtn.props.accessibilityState?.disabled).toBeTruthy();
+
+    // Pressing the disabled button must not trigger revokeDevice
+    fireEvent.press(revokeBtn);
+    expect(mockRevokeDevice).not.toHaveBeenCalled();
+  });
+
   it("jump to feed navigates to Feed tab with originDeviceId param", async () => {
     const device = makeDevice({ id: "device-1", name: "My Phone" });
     const { ctrl } = await makeController([device]);

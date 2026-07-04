@@ -158,17 +158,24 @@ export function DeviceDetailScreen({ route, navigation }: Props): React.JSX.Elem
         <Text style={[styles.actionBtnText, { color: tokens.text }]}>Send test notification</Text>
       </TouchableOpacity>
 
-      {/* Revoke */}
+      {/* Revoke — disabled for the current device (cannot self-revoke) */}
       {!confirmRevoke ? (
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel="Revoke"
-          style={[styles.actionBtn, { borderColor: tokens.danger, backgroundColor: tokens.surface }]}
-          onPress={handleRevoke}
-          disabled={busy}
-        >
-          <Text style={[styles.actionBtnText, { color: tokens.danger }]}>Revoke device</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Revoke"
+            style={[styles.actionBtn, { borderColor: isSelf ? tokens.border : tokens.danger, backgroundColor: tokens.surface }]}
+            onPress={handleRevoke}
+            disabled={busy || isSelf}
+          >
+            <Text style={[styles.actionBtnText, { color: isSelf ? tokens.textMuted : tokens.danger }]}>Revoke device</Text>
+          </TouchableOpacity>
+          {isSelf && (
+            <Text style={[styles.selfRevokeHint, { color: tokens.textMuted }]}>
+              Cannot revoke the current device.
+            </Text>
+          )}
+        </>
       ) : (
         <View style={styles.confirmContainer}>
           <Text style={[styles.confirmText, { color: tokens.danger }]}>
@@ -265,4 +272,5 @@ const styles = StyleSheet.create({
   confirmText: { fontSize: 14, marginBottom: 4 },
   cancelText: { fontSize: 14, textAlign: "center", marginTop: 4 },
   notFound: { fontSize: 16, textAlign: "center" },
+  selfRevokeHint: { fontSize: 12, textAlign: "center", marginTop: 4, marginBottom: 6 },
 });
