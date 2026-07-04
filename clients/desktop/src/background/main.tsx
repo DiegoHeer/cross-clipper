@@ -6,10 +6,18 @@
  * windows communicate with it through the bridge (cc:req / cc:evt / cc:reply).
  */
 import { emit, listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { enable as autostartEnable } from "@tauri-apps/plugin-autostart";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { TauriStorage, type StoreLike } from "../shared/storage";
 import { serveRequests } from "../shared/bridge";
+import { loadPrefs, loadAuth } from "../shared/settings";
+import { AlertManager, type Notifier } from "./alerts";
 import { BackgroundController } from "./controller";
 import { tauriSocketFactory } from "./socket";
 
@@ -19,11 +27,45 @@ import { tauriSocketFactory } from "./socket";
 const AUTOSTART_INIT_KEY = "cc.autostartInitialized";
 
 // ---------------------------------------------------------------------------
+// Tauri notification notifier
+// ---------------------------------------------------------------------------
+const tauriNotifier: Notifier = {
+  async notify(_id: string, title: string, body: string): Promise<void> {
+    try {
+      let granted = await isPermissionGranted();
+      if (!granted) {
+        const perm = await requestPermission();
+        granted = perm === "granted";
+      }
+      if (granted) {
+        sendNotification({ title, body });
+      }
+    } catch {
+      // Non-fatal — notifications unavailable
+    }
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------------------
 async function main(): Promise<void> {
   const store = new LazyStore("store.bin") as unknown as StoreLike;
   const storage = new TauriStorage(store);
+
+  // Build AlertManager — wires notification policy (Task 14).
+  const alertManager = new AlertManager({
+    storage,
+    notifier: tauriNotifier,
+    setTrayState: async (pending: boolean) => {
+      await invoke("set_tray_pending", { pending });
+    },
+    getPrefs: loadPrefs,
+    getSelfDeviceId: async () => {
+      const auth = await loadAuth();
+      return auth?.deviceId ?? null;
+    },
+  });
 
   const controller = new BackgroundController({
     storage,
@@ -31,7 +73,9 @@ async function main(): Promise<void> {
     onCaptureResult: (r) => {
       void emit("cc:capture-result", r);
     },
-    // onNewItem wired in Task 14 (badge / native notification)
+    onNewItem: (item) => {
+      void alertManager.onItem(item);
+    },
   });
 
   // Serve PopupRequests from renderer windows
