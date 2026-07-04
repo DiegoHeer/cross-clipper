@@ -18,7 +18,7 @@ Self-hosted clipboard & share sync across your own devices — Windows, iOS, And
 |---|---|---|---|
 | **Server** | Docker (Linux, non-root, `/data` volume) | — | Shipped |
 | **Browser extension** | Chrome, Edge + Firefox (MV3) | Compose box, context-menu send | Shipped |
-| **Desktop** | Windows via Tauri; NSIS/MSI installers built in CI | Global hotkey (Ctrl+Alt+V) | Shipped |
+| **Desktop** | Windows via Tauri; NSIS/MSI installers built in CI | Global hotkey (Ctrl+Alt+C), quick flyout (Ctrl+Alt+V) | Shipped |
 | **Mobile** | iOS + Android via Expo (dev builds) | Share sheet / share intent; compose | Shipped |
 
 Push-wake (APNs/FCM) and media sync are roadmap (Phase 5+). In-app notifications over WebSocket work today; background wake while the app is closed requires the push phase.
