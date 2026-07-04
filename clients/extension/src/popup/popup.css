@@ -87,3 +87,9 @@ body,
 .presence { font-size: 11px; }
 .badge { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 0 var(--space-2); font-style: normal; font-size: 10px; margin-left: var(--space-1); }
 .nudge { background: var(--danger); color: #fff; border-radius: 999px; padding: 0 var(--space-2); font-style: normal; font-size: 10px; margin-left: var(--space-1); }
+.preview-card {
+  background: var(--surface-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: var(--space-2) var(--space-3);
+  color: var(--text);
+}
+.preview-card-header { font-size: 11px; margin-bottom: var(--space-1); color: var(--text-muted); }

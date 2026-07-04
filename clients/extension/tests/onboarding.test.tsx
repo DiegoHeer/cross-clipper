@@ -64,6 +64,7 @@ describe("Onboarding", () => {
 
     // step 3
     expect(await screen.findByText(/appearance/i)).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /preview/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /start using crossclipper/i }));
     expect(onComplete).toHaveBeenCalled();
 
@@ -101,6 +102,7 @@ describe("Onboarding", () => {
       <Onboarding mode="reauth" initialServer="http://127.0.0.1:8080" notice="Session expired" onComplete={() => {}} />,
     );
     expect(await screen.findByText(/session expired/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /sign in/i })).toBeInTheDocument();
     expect(screen.getByText(/127\.0\.0\.1:8080/)).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
     vi.unstubAllGlobals();
