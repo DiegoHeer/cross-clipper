@@ -1,4 +1,5 @@
 import "../theme/tokens.css";
+import "./popup.css";
 import { initTheme } from "../theme/theme";
 
 initTheme();
