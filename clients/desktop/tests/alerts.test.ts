@@ -110,4 +110,47 @@ describe("AlertManager policy (system spec §4)", () => {
     await alerts.clearUnread();
     expect(ctx.trayStates.at(-1)).toBe(false);
   });
+
+  it("watermark crash-ordering: notifier throws on first delivery → re-deliver same id → no second notify attempt", async () => {
+    // The watermark is persisted BEFORE notify() is called, so even if notify
+    // throws, the item id is stored. A subsequent re-deliver of the same id
+    // must be deduplicated by the watermark check and must not call notify again.
+    const storage = new MemoryStorage();
+    let notifyCallCount = 0;
+
+    const { AlertManager } = await import("../src/background/alerts");
+    const alerts = new AlertManager({
+      storage,
+      notifier: {
+        notify: async () => {
+          notifyCallCount++;
+          throw new Error("notification delivery failed");
+        },
+      },
+      setTrayState: async () => {},
+      getPrefs: async () => ({
+        notifyOnNewItems: true,
+        captureToastEnabled: true,
+        captureToastDurationMs: 5000,
+        launchAtLogin: true,
+      }),
+      getSelfDeviceId: async () => "self",
+    });
+
+    // First delivery — notify throws, but watermark must already be persisted.
+    try {
+      await alerts.onItem(item("01A"));
+    } catch {
+      // Absorb the throw; real callers also swallow errors.
+    }
+    expect(notifyCallCount).toBe(1);
+
+    // Re-deliver the same item id — watermark deduplicated, notify NOT called again.
+    try {
+      await alerts.onItem(item("01A"));
+    } catch {
+      // ignore
+    }
+    expect(notifyCallCount).toBe(1);
+  });
 });
