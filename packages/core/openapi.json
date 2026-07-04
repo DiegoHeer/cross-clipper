@@ -21,6 +21,10 @@
             "title": "Name",
             "type": "string"
           },
+          "online": {
+            "title": "Online",
+            "type": "boolean"
+          },
           "platform": {
             "title": "Platform",
             "type": "string"
@@ -31,7 +35,8 @@
           "name",
           "platform",
           "last_seen_at",
-          "created_at"
+          "created_at",
+          "online"
         ],
         "title": "DeviceOut",
         "type": "object"

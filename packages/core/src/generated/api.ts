@@ -165,6 +165,8 @@ export interface components {
             last_seen_at: string;
             /** Name */
             name: string;
+            /** Online */
+            online: boolean;
             /** Platform */
             platform: string;
         };

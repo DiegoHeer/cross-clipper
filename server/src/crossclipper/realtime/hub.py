@@ -16,21 +16,33 @@ class Hub:
             lambda: defaultdict(set)
         )
 
-    def add(self, user_id: str, device_id: str, ws: WebSocket) -> None:
+    def add(self, user_id: str, device_id: str, ws: WebSocket) -> bool:
+        """Register a socket and return True iff this is the device's first socket (offline→online)."""
         self._sockets[user_id][device_id].add(ws)
+        return len(self._sockets[user_id][device_id]) == 1
 
-    def remove(self, user_id: str, device_id: str, ws: WebSocket) -> None:
+    def remove(self, user_id: str, device_id: str, ws: WebSocket) -> bool:
+        """Unregister a socket and return True iff this was the device's last socket (online→offline)."""
         device_map = self._sockets.get(user_id)
         if device_map is None:
-            return
+            return False
         sockets = device_map.get(device_id)
         if sockets is None:
-            return
+            return False
         sockets.discard(ws)
         if not sockets:
             del device_map[device_id]
-        if not device_map:
-            del self._sockets[user_id]
+            if not device_map:
+                del self._sockets[user_id]
+            return True
+        return False
+
+    def is_online(self, user_id: str, device_id: str) -> bool:
+        """Return True iff the device currently holds at least one open socket."""
+        device_map = self._sockets.get(user_id)
+        if device_map is None:
+            return False
+        return device_id in device_map
 
     async def close_device(self, user_id: str, device_id: str) -> None:
         """Close all sockets for the given device with code 4401 (revoked).
@@ -51,9 +63,14 @@ class Hub:
             if not self._sockets[user_id]:
                 del self._sockets[user_id]
 
-    async def broadcast(self, user_id: str, event: dict) -> None:
+    async def broadcast(
+        self, user_id: str, event: dict, exclude: "WebSocket | None" = None
+    ) -> None:
+        """Send *event* to every socket for *user_id*, optionally skipping one socket."""
         for device_sockets in list(self._sockets.get(user_id, {}).values()):
             for ws in list(device_sockets):
+                if ws is exclude:
+                    continue
                 try:
                     await ws.send_json(event)
                 except Exception:  # noqa: BLE001 — a dead socket must not break the send
