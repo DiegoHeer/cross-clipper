@@ -2,7 +2,7 @@
 
 Self-hosted clipboard & share sync across your own devices — Windows, iOS, Android, and a browser extension — backed by a single server you run yourself. Think Pushbullet, but yours.
 
-> **Status: under construction.** The server API is being built (auth, devices, items, realtime are in). No client apps exist yet; nothing here is ready to self-host. Watch this space.
+> **Status: all four clients shipped.** Server, browser extension, Windows desktop, iOS, and Android are all implemented. Push notifications (APNs/FCM) and media sync are roadmap (Phase 5+).
 
 ## How it works
 
@@ -11,6 +11,37 @@ Self-hosted clipboard & share sync across your own devices — Windows, iOS, And
 - **Targeted notifications.** Items sync everywhere, but *you* choose which device (if any) gets alerted — silent-by-default.
 - **Pull-based sync with live nudges.** Clients catch up with a cursor pull; WebSocket and push are wake signals, never the source of truth. Push payloads are content-free — clipboard content never transits Apple/Google.
 - **Self-hosting as a feature.** Single Docker image, non-root, one `/data` folder to back up, SQLite by default, Postgres/S3 by config.
+
+## Clients
+
+| Client | Platform | How you capture | Status |
+|---|---|---|---|
+| **Server** | Docker (Linux, non-root, `/data` volume) | — | Shipped |
+| **Browser extension** | Chrome, Edge + Firefox (MV3) | Compose box, context-menu send | Shipped |
+| **Desktop** | Windows via Tauri; NSIS/MSI installers built in CI | Global hotkey (Ctrl+Alt+V) | Shipped |
+| **Mobile** | iOS + Android via Expo (dev builds) | Share sheet / share intent; compose | Shipped |
+
+Push-wake (APNs/FCM) and media sync are roadmap (Phase 5+). In-app notifications over WebSocket work today; background wake while the app is closed requires the push phase.
+
+<!-- SCREENSHOTS: one per client (popup, flyout, feed, share sheet) — Diego captures these. Insert here. -->
+
+## How it compares
+
+CrossClipper occupies a specific niche: deliberate text sync across your own devices, server you run, no third-party cloud.
+
+| | CrossClipper | Pushbullet | KDE Connect |
+|---|---|---|---|
+| **Self-hosted** | Yes — your server | Cloud (Pushbullet's) | LAN-only (no server needed) |
+| **Works over the internet** | Yes (your domain) | Yes | LAN only by default |
+| **iOS support** | Yes | Yes (limited, no longer maintained) | No |
+| **Text sync** | Yes | Yes | Yes |
+| **Media sync** | Planned (Phase 5+) | Yes | Yes |
+| **Notification mirroring** | No (non-goal) | Yes | Yes |
+| **Remote control / SMS** | No (non-goal) | Yes (partial) | Yes |
+| **E2EE** | No — TLS + own server | No | Yes (local traffic) |
+| **Open source** | Yes (AGPL-3.0) | No | Yes (GPL-2.0) |
+
+CrossClipper does less than Pushbullet or KDE Connect on purpose: no notification mirroring, no SMS relay, no passive clipboard watching. The trade-off is a simpler trust model, a smaller attack surface, and a server you fully control.
 
 ## Self-hosting
 
