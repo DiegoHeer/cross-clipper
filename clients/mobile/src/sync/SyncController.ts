@@ -59,6 +59,8 @@ export interface SyncSnapshot {
   status: SyncStatus;
   items: Item[];
   devices: Device[];
+  /** The authenticated device's own id (for self-exclusion in target picker). */
+  selfDeviceId: string | null;
   /** Outbox ids currently pending delivery. */
   pendingIds: string[];
   /** Outbox ids that failed (rejected 4xx). */
@@ -207,6 +209,7 @@ export class SyncController {
       status: this.status,
       items: this.feed.list(),
       devices: [...this.devices],
+      selfDeviceId: this.auth?.deviceId ?? null,
       pendingIds: (this.outbox?.pending() ?? []).map((e) => e.id),
       failedIds: [...this.failed.keys()],
       authRequired: this.authRequired,
