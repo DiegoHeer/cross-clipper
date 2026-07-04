@@ -9,6 +9,8 @@ import type { AppStateStatus } from "react-native";
 import type { Item, Device } from "@crossclipper/core";
 import { SyncController } from "../SyncController";
 import type { WsLike } from "@crossclipper/core";
+import type { AppGroup, AppGroupShim } from "../../platform/appGroup";
+import { makeAppGroup } from "../../platform/appGroup";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -104,6 +106,18 @@ function makeDevice(id = "d1"): Device {
     last_seen_at: "2026-01-01T00:00:00",
     user_id: "u1",
   } as unknown as Device;
+}
+
+// ─── Fake AppGroup shim ───────────────────────────────────────────────────────
+
+function makeFakeShim(): AppGroupShim & { store: Record<string, string> } {
+  const store: Record<string, string> = {};
+  return {
+    store,
+    async getItem(key: string) { return store[key] ?? null; },
+    async setItem(key: string, value: string) { store[key] = value; },
+    async removeItem(key: string) { delete store[key]; },
+  };
 }
 
 const AUTH_KEY = "cc.auth";
@@ -417,6 +431,87 @@ describe("SyncController", () => {
       const fakeSocket2 = makeFakeSocket();
       socketFactory.mockReturnValue(fakeSocket2.like);
       await ctrl.wake();
+      expect(ctrl.snapshot().ready).toBe(true);
+    });
+  });
+
+  describe("App Group drain on wake (A1 idempotency)", () => {
+    it("drains the App Group mirror into the outbox with the PRESERVED ULID on wake", async () => {
+      const MIRROR_ID = "01MIRRORUL1D0000000000000000";
+      const shim = makeFakeShim();
+      const ag: AppGroup = makeAppGroup(shim);
+
+      // Pre-populate the App Group mirror (simulates a failed share-extension send)
+      await ag.pushToMainOutbox({ id: MIRROR_ID, kind: "text", body: "mirrored" });
+
+      // Capture POST bodies so we can assert the ULID is preserved
+      const posted: Array<Record<string, unknown>> = [];
+      const fetchFn = jest.fn().mockImplementation(
+        async (_url: unknown, init?: { body?: string }) => {
+          if (init?.body) {
+            const body = JSON.parse(init.body) as Record<string, unknown>;
+            // Only capture item POSTs (not items GET or devices GET)
+            if (body.id) posted.push(body);
+          }
+          if (String(_url).includes("/items") && !String(_url).includes("?")) {
+            // POST /items → return a created item
+            return new Response(
+              JSON.stringify({
+                id: MIRROR_ID,
+                kind: "text",
+                body: "mirrored",
+                created_at: "2026-01-01T00:00:00",
+                sync_seq: 1,
+                deleted_at: null,
+                origin_device_id: "d1",
+                target_device_id: null,
+              }),
+              { status: 201, headers: { "content-type": "application/json" } },
+            );
+          }
+          // All other GETs (cursor pull, devices)
+          if (String(_url).includes("devices")) {
+            return new Response(JSON.stringify({ devices: [] }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            });
+          }
+          return new Response(JSON.stringify({ items: [], next_cursor: null }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      );
+
+      const ctrl = new SyncController({ storage, socketFactory, fetchFn, appGroup: ag });
+      await ctrl.wake();
+      fakeSocket.open();
+      await flush(200);
+
+      // The POST to /items must have used the PRESERVED ULID from the mirror
+      const itemPosts = posted.filter((b) => b.body === "mirrored");
+      expect(itemPosts).toHaveLength(1);
+      expect(itemPosts[0]!["id"]).toBe(MIRROR_ID);
+
+      // Mirror must be cleared after drain
+      const remaining = await ag.drainMainOutbox();
+      expect(remaining).toHaveLength(0);
+    });
+
+    it("drain failure does not break wake (isolated)", async () => {
+      const badAppGroup: AppGroup = {
+        readAuth: async () => null,
+        writeAuth: async () => {},
+        clearAuth: async () => {},
+        pushToMainOutbox: async () => {},
+        drainMainOutbox: async () => { throw new Error("native crash"); },
+      };
+
+      const fetchFn = jest.fn().mockResolvedValue(makeItemsResponse([]));
+      const ctrl = new SyncController({ storage, socketFactory, fetchFn, appGroup: badAppGroup });
+
+      // wake() must complete without throwing despite drain failure
+      await expect(ctrl.wake()).resolves.toBeUndefined();
       expect(ctrl.snapshot().ready).toBe(true);
     });
   });
