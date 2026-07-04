@@ -3,6 +3,7 @@ import { FeedCard, type FeedEntry } from "./FeedCard";
 
 export interface FeedProps {
   entries: FeedEntry[];
+  selfDeviceId: string | null;
   nameOf(id: string): string;
   iconOf(id: string): string;
   onCopy(body: string): void | Promise<void>;
@@ -11,24 +12,32 @@ export interface FeedProps {
   onRetry(id: string): void;
 }
 
-export function Feed({ entries, nameOf, iconOf, onCopy, onOpen, onDelete, onRetry }: FeedProps) {
+export function Feed({ entries, selfDeviceId, nameOf, iconOf, onCopy, onOpen, onDelete, onRetry }: FeedProps) {
   const ref = useRef<HTMLDivElement>(null);
   const scrolled = useRef(false);
   const prevTopId = useRef<string | null>(null);
   const [newCount, setNewCount] = useState(0);
 
   useEffect(() => {
-    const topId = entries[0]?.item.id ?? null;
+    const topEntry = entries[0];
+    const topId = topEntry?.item.id ?? null;
     if (
       prevTopId.current !== null &&
       topId !== null &&
       topId !== prevTopId.current &&
       scrolled.current
     ) {
-      setNewCount((n) => n + 1);
+      // Own sends (optimistic outbox echoes or items from this device) must not
+      // count toward the pill — the pill exists to flag arrivals from OTHER devices.
+      const isSelfSend =
+        topEntry?.sendState === "pending" ||
+        (selfDeviceId !== null && topEntry?.item.origin_device_id === selfDeviceId);
+      if (!isSelfSend) {
+        setNewCount((n) => n + 1);
+      }
     }
     prevTopId.current = topId;
-  }, [entries]);
+  }, [entries, selfDeviceId]);
 
   const onScroll = () => {
     scrolled.current = (ref.current?.scrollTop ?? 0) > 40;

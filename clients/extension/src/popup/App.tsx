@@ -86,6 +86,7 @@ export default function App() {
         <DeviceRail devices={deviceViews} selected={filter} onSelect={setFilter} />
         <Feed
           entries={entries}
+          selfDeviceId={state.deviceId}
           nameOf={nameOf}
           iconOf={iconOf}
           onCopy={(body) => void navigator.clipboard.writeText(body)}
