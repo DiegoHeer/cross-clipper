@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { Compose } from "../src/popup/components/Compose";
@@ -65,6 +65,21 @@ describe("Compose", () => {
     await userEvent.type(screen.getByRole("textbox"), "https://example.com{Enter}");
     expect(onSend).toHaveBeenCalledWith("link", "https://example.com", null);
     await userEvent.type(screen.getByRole("textbox"), "   {Enter}");
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+  it("Enter during IME composition does not send", () => {
+    const onSend = vi.fn();
+    render(<Compose devices={devices} onSend={onSend} />);
+    const box = screen.getByRole("textbox");
+    fireEvent.keyDown(box, { key: "Enter", isComposing: true });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+  it("plain Enter (not composing) does send when text is present", async () => {
+    const onSend = vi.fn();
+    render(<Compose devices={devices} onSend={onSend} />);
+    const box = screen.getByRole("textbox");
+    await userEvent.type(box, "hello");
+    fireEvent.keyDown(box, { key: "Enter", isComposing: false });
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 });

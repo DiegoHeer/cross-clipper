@@ -45,7 +45,7 @@ export function Compose({ devices, onSend }: ComposeProps) {
           placeholder="Type or paste…"
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               send();
             }
