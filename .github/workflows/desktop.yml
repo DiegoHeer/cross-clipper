@@ -22,8 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Desktop (typecheck + test + cargo check)
+  desktop:
+    name: Desktop (test + lint)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,8 +34,7 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      # Tauri v2 Linux build prerequisites (cargo check only; bundling is the
-      # windows job's concern, added with the full CI task).
+      # Tauri v2 Linux build prerequisites.
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update -qq
@@ -44,6 +43,8 @@ jobs:
             libdbus-1-dev pkg-config
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -58,5 +59,44 @@ jobs:
       - name: Test
         run: npm run test --workspace @crossclipper/desktop
 
-      - name: Cargo check
-        run: cargo check --manifest-path clients/desktop/src-tauri/Cargo.toml
+      - name: Build (TS)
+        run: npm run build --workspace @crossclipper/desktop
+
+      - name: Cargo fmt
+        run: cargo fmt --all --check
+        working-directory: clients/desktop/src-tauri
+
+      - name: Cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: clients/desktop/src-tauri
+
+      - name: Cargo test
+        run: cargo test
+        working-directory: clients/desktop/src-tauri
+
+  windows-build:
+    name: Windows bundle (build smoke)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Tauri build (NSIS + MSI)
+        run: npm run tauri --workspace @crossclipper/desktop -- build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crossclipper-windows-installers
+          path: |
+            clients/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            clients/desktop/src-tauri/target/release/bundle/msi/*.msi
