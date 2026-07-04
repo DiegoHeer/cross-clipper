@@ -211,7 +211,7 @@ function simulateScrollDown(container: HTMLElement) {
 }
 
 describe("Feed pill — own-send suppression", () => {
-  it("does NOT show the pill when a foreign item arrives while scrolled", async () => {
+  it("shows the pill when a foreign item arrives while scrolled", async () => {
     const { rerender, container } = render(
       <Feed {...pillBaseProps} entries={[makeEntry("01B", "d-other")]} />,
     );
