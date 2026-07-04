@@ -1,3 +1,5 @@
+import { writeText as clipboardWrite } from "@tauri-apps/plugin-clipboard-manager";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useBridge } from "../main/useBridge";
 import { toDeviceView } from "../shared/model";
 import { FeedCard } from "../ui/FeedCard";
@@ -44,12 +46,9 @@ export function Flyout() {
     return p.failed ? "failed" as const : "pending" as const;
   };
 
-  // Tauri clipboard write — use the plugin when the desktop has it wired;
-  // for now use the raw invoke (plugin is declared in PR 1 capabilities).
   const handleCopy = async (body: string) => {
     try {
-      // @ts-expect-error — __TAURI__ global not typed in this tsconfig
-      await window.__TAURI__?.tauri?.invoke("plugin:clipboard-manager|write_text", { text: body });
+      await clipboardWrite(body);
     } catch {
       // Fallback to clipboard API (works in dev/test environments).
       await navigator.clipboard.writeText(body);
@@ -57,10 +56,8 @@ export function Flyout() {
   };
 
   const handleOpen = (url: string) => {
-    // Use the opener plugin (wired in capabilities); ignore in test/dev.
     try {
-      // @ts-expect-error — __TAURI__ global not typed in this tsconfig
-      void window.__TAURI__?.opener?.openUrl(url);
+      void openUrl(url);
     } catch {
       window.open(url, "_blank", "noreferrer");
     }

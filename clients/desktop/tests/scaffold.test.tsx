@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import App from "../src/main/main";
 
 describe("scaffold", () => {
-  it("renders the app name", () => {
+  it("renders without crashing (loading splash shown before first snapshot)", () => {
     render(<App />);
-    expect(screen.getByText("CrossClipper")).toBeInTheDocument();
+    // Before the first WorkerEvent snapshot the app shows a loading splash.
+    // The real header with "CrossClipper" appears once the bridge delivers state.
+    expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 });

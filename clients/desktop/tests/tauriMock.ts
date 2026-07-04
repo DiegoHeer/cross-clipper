@@ -68,3 +68,17 @@ export class Store {
 export { Store as LazyStore };
 
 export default Store;
+
+// ---------------------------------------------------------------------------
+// @tauri-apps/plugin-clipboard-manager stub — no-op in jsdom.
+// ---------------------------------------------------------------------------
+export async function writeText(_text: string): Promise<void> {
+  // In tests the clipboard write falls through to navigator.clipboard fallback.
+}
+
+// ---------------------------------------------------------------------------
+// @tauri-apps/plugin-opener stub — no-op in jsdom.
+// ---------------------------------------------------------------------------
+export async function openUrl(_url: string): Promise<void> {
+  // In tests the open-url call is silently ignored.
+}
