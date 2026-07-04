@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "CrossClipper desktop capabilities",
+  "windows": ["main", "flyout", "toast", "background"],
+  "permissions": [
+    "core:default",
+    "notification:default"
+  ]
+}
