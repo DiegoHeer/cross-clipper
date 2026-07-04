@@ -124,6 +124,26 @@ impl PauseState {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Boot-conflict record
+// ---------------------------------------------------------------------------
+
+/// A hotkey registration failure detected during setup.
+///
+/// Stored in `HotkeyState.boot_conflicts` and drained on the first
+/// `get_boot_conflicts` IPC call so the background webview can notify the user
+/// after it has subscribed (decision 7 — pull-on-boot semantics).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BootConflict {
+    pub combo: String,
+    pub role: String,
+    pub message: String,
+}
+
+// ---------------------------------------------------------------------------
+// HotkeyState — tracks active shortcuts + optional pause deadline
+// ---------------------------------------------------------------------------
+
 /// Tracks the currently-registered capture / flyout shortcuts and the pause
 /// state.  The plugin's actual OS registration is driven from `lib.rs`;
 /// `HotkeyState` only carries the logical bookkeeping.
@@ -132,6 +152,13 @@ pub struct HotkeyState {
     pub capture_combo: String,
     pub flyout_combo: String,
     pub pause: PauseState,
+    /// Whether the capture hotkey is enabled (toggled via the tray menu).
+    /// Starts `true`; `set_capture_enabled` flips OS registration and updates
+    /// this flag so the tray handler can toggle without a roundtrip to TS.
+    pub capture_enabled: bool,
+    /// Boot-time conflicts collected during `register_default_hotkeys`.
+    /// Drained (not cloned) by `get_boot_conflicts` so re-queries return empty.
+    pub boot_conflicts: Vec<BootConflict>,
 }
 
 impl HotkeyState {
@@ -140,11 +167,22 @@ impl HotkeyState {
             capture_combo: capture.to_string(),
             flyout_combo: flyout.to_string(),
             pause: PauseState::Active,
+            capture_enabled: true,
+            boot_conflicts: Vec::new(),
         }
     }
 
+    /// Returns `true` when the pause deadline is still in the future.
     pub fn is_capture_paused(&self) -> bool {
         self.pause.is_paused()
+    }
+
+    /// Returns `true` when the hotkey is either disabled or paused.
+    ///
+    /// Use this in `emit_capture_event` as a defense-in-depth check so that
+    /// a silent OS-unregister failure cannot cause spurious captures.
+    pub fn is_capture_blocked(&self) -> bool {
+        !self.capture_enabled || self.pause.is_paused()
     }
 }
 
@@ -194,5 +232,39 @@ mod tests {
     fn parses_flyout_combo() {
         let sc = parse_accelerator("Ctrl+Alt+V").expect("valid");
         assert_eq!(describe(&sc), "Ctrl+Alt+V");
+    }
+
+    #[test]
+    fn capture_enabled_starts_true() {
+        let state = HotkeyState::new("Ctrl+Alt+C", "Ctrl+Alt+V");
+        assert!(state.capture_enabled);
+    }
+
+    #[test]
+    fn is_capture_blocked_when_disabled() {
+        let mut state = HotkeyState::new("Ctrl+Alt+C", "Ctrl+Alt+V");
+        // Disable capture — should be blocked even though pause is Active.
+        state.capture_enabled = false;
+        assert!(state.is_capture_blocked());
+    }
+
+    #[test]
+    fn is_capture_blocked_when_paused() {
+        let mut state = HotkeyState::new("Ctrl+Alt+C", "Ctrl+Alt+V");
+        state.pause = PauseState::pause_for(60);
+        // capture_enabled is true but pause is active.
+        assert!(state.is_capture_blocked());
+    }
+
+    #[test]
+    fn is_capture_not_blocked_when_enabled_and_active() {
+        let state = HotkeyState::new("Ctrl+Alt+C", "Ctrl+Alt+V");
+        assert!(!state.is_capture_blocked());
+    }
+
+    #[test]
+    fn boot_conflicts_starts_empty() {
+        let state = HotkeyState::new("Ctrl+Alt+C", "Ctrl+Alt+V");
+        assert!(state.boot_conflicts.is_empty());
     }
 }

@@ -6,12 +6,16 @@
  *   2. useEffect cleanup: subscriptions use proper lifecycle (no StrictMode leak).
  *   5. Second sequential synced capture restarts the countdown timer.
  *
+ * Also covers M3 (capstone fix): captureToastEnabled=false suppresses the
+ * toast; captureToastDurationMs controls the countdown.
+ *
  * The toast_update path (cc:evt) is also exercised to confirm the existing
  * behaviour is preserved after the subscription refactor.
  */
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetEvents, emit } from "./tauriMock";
+import { __resetEvents, emit, Store } from "./tauriMock";
+import { __setStore, savePrefs } from "../src/shared/settings";
 import { ToastApp } from "../src/toast/main";
 
 // tauriMock is aliased via vitest.config.ts for @tauri-apps/api/event.
@@ -21,6 +25,8 @@ const invokeSpy = vi.fn().mockResolvedValue(undefined);
 beforeEach(() => {
   __resetEvents();
   invokeSpy.mockClear();
+  // Fresh store per test — ensures captureToastEnabled defaults to true.
+  __setStore(new Store());
   // Expose as a global so the declare function invoke(...) call resolves.
   (window as unknown as Record<string, unknown>)["invoke"] = invokeSpy;
 });
@@ -139,5 +145,57 @@ describe("ToastApp — toast_update via cc:evt", () => {
     // Toast still showing; no hide invoked.
     expect(screen.getByText(/queued/i)).toBeInTheDocument();
     expect(invokeSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("ToastApp — M3: prefs gate (captureToastEnabled / captureToastDurationMs)", () => {
+  it("captureToastEnabled=false suppresses toast and show_window", async () => {
+    await savePrefs({ captureToastEnabled: false });
+    render(<ToastApp />);
+
+    await act(async () => {
+      await emit("cc:capture-result", {
+        state: "synced",
+        snippet: "secret",
+        outboxId: "01P",
+      });
+    });
+
+    // Toast must NOT appear and show_window must NOT be called.
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(invokeSpy).not.toHaveBeenCalledWith("show_window", expect.anything());
+  });
+
+  it("captureToastEnabled=true (default) shows toast normally", async () => {
+    render(<ToastApp />);
+
+    await act(async () => {
+      await emit("cc:capture-result", {
+        state: "synced",
+        snippet: "hello",
+        outboxId: "01R",
+      });
+    });
+
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(invokeSpy).toHaveBeenCalledWith("show_window", { label: "toast" });
+  });
+
+  it("captureToastDurationMs=2000 is passed as countdownMs for synced captures", async () => {
+    await savePrefs({ captureToastDurationMs: 2000 });
+    render(<ToastApp />);
+
+    await act(async () => {
+      await emit("cc:capture-result", {
+        state: "synced",
+        snippet: "hi",
+        outboxId: "01S",
+      });
+    });
+
+    // The countdown should show 2 s (2000 ms → "2s" label in Toast).
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    // Toast renders — show_window invoked.
+    expect(invokeSpy).toHaveBeenCalledWith("show_window", { label: "toast" });
   });
 });
