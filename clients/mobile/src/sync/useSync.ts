@@ -26,6 +26,10 @@ interface SyncContextValue extends SyncSnapshot {
   remove(id: string): Promise<void>;
   renameDevice(id: string, name: string): Promise<void>;
   revokeDevice(id: string): Promise<void>;
+  /** Call after authPersist.saveAuth() to wake the engine with new credentials. */
+  onSignedIn(): Promise<void>;
+  /** Stop the engine and clear in-memory auth. Caller clears storage first. */
+  signOut(): void;
 }
 
 const SyncContext = createContext<SyncContextValue | null>(null);
@@ -76,9 +80,12 @@ export function SyncProvider({ children, controller: injected }: SyncProviderPro
 
   const revokeDevice = useCallback((id: string) => ctrl.revokeDevice(id), [ctrl]);
 
+  const onSignedIn = useCallback(() => ctrl.onSignedIn(), [ctrl]);
+  const signOut = useCallback(() => ctrl.signOut(), [ctrl]);
+
   const value = useMemo(
-    () => ({ ...snapshot, send, remove, renameDevice, revokeDevice }),
-    [snapshot, send, remove, renameDevice, revokeDevice],
+    () => ({ ...snapshot, send, remove, renameDevice, revokeDevice, onSignedIn, signOut }),
+    [snapshot, send, remove, renameDevice, revokeDevice, onSignedIn, signOut],
   );
 
   return React.createElement(SyncContext.Provider, { value }, children);
