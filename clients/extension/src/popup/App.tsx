@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import browser from "webextension-polyfill";
 import type { Item } from "@crossclipper/core";
 import { Banner } from "./components/Banner";
@@ -15,6 +15,15 @@ export default function App() {
   const { state, api } = useWorker();
   const [filter, setFilter] = useState<string | null>(null);
   const [view, setView] = useState<"feed" | "settings">("feed");
+
+  // Latched onboarding flag: set once on the first ready snapshot.
+  // null = not yet determined (still loading).
+  // true  = show onboarding (user was not authed at first ready).
+  // false = skip onboarding (user was already authed at first ready, or completed it).
+  const [onboarding, setOnboarding] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (state.ready && onboarding === null) setOnboarding(!state.authed);
+  }, [state.ready, state.authed, onboarding]);
 
   const deviceViews = useMemo(
     () => state.devices.map((d) => toDeviceView(d, state.deviceId)),
@@ -44,15 +53,18 @@ export default function App() {
   const iconOf = (id: string) =>
     platformIcon(deviceViews.find((d) => d.id === id)?.platform ?? "");
 
-  if (!state.ready) return <div className="app" />;
+  if (!state.ready || onboarding === null) return <div className="app" />;
 
-  if (!state.authed || state.authRequired) {
+  if (onboarding || state.authRequired) {
     return (
       <Onboarding
         mode={state.authRequired ? "reauth" : "fresh"}
         initialServer={state.baseUrl ?? undefined}
         notice={state.authRequired ? "Session expired or device revoked — sign in again." : undefined}
-        onComplete={() => void api.refresh()}
+        onComplete={() => {
+          setOnboarding(false);
+          void api.refresh();
+        }}
       />
     );
   }
