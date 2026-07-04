@@ -17,15 +17,17 @@ import { FeedScreen } from "../FeedScreen";
 import * as Clipboard from "expo-clipboard";
 import type { Item, WsLike } from "@crossclipper/core";
 
-// ─── useRoute mock — controls originDeviceId param per test ──────────────────
+// ─── useRoute / useNavigation mocks ──────────────────────────────────────────
 
 let mockRouteParams: { originDeviceId?: string } | undefined = undefined;
+const mockSetParams = jest.fn();
 
 jest.mock("@react-navigation/native", () => {
   const actual = jest.requireActual("@react-navigation/native");
   return {
     ...actual,
     useRoute: () => ({ params: mockRouteParams }),
+    useNavigation: () => ({ setParams: mockSetParams }),
   };
 });
 
@@ -147,6 +149,7 @@ describe("FeedScreen", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     (Clipboard.setStringAsync as jest.Mock).mockClear();
+    mockSetParams.mockClear();
     mockRouteParams = undefined; // reset filter between tests
   });
 
@@ -332,6 +335,54 @@ describe("FeedScreen", () => {
       // Both items now visible
       expect(getByText("item-from-device-a")).toBeTruthy();
       expect(getByText("item-from-device-b")).toBeTruthy();
+    });
+
+    it("repeat jump from same device re-applies filter after chip dismiss", async () => {
+      const itemA = makeItemWithOrigin("01ARZ3NDEKTSV4RRFFQ69G5FAV", "device-a");
+      const itemB = makeItemWithOrigin("01BX5ZZKBKACTAV9WEVGEMMVS0", "device-b");
+      mockRouteParams = { originDeviceId: "device-a" };
+
+      const { ctrl } = await makeController([itemA, itemB]);
+      const { queryByText, getByText, getByRole, rerender } = render(
+        <TestWrapper controller={ctrl}>
+          <FeedScreen />
+        </TestWrapper>,
+      );
+      await act(async () => {});
+
+      // Filter active — only device-a visible
+      expect(getByText("item-from-device-a")).toBeTruthy();
+      expect(queryByText("item-from-device-b")).toBeNull();
+
+      // Dismiss the chip — must call setParams to clear the stale param.
+      // Simulate what real navigation does: after setParams the route param becomes undefined.
+      mockSetParams.mockImplementationOnce(() => {
+        mockRouteParams = { originDeviceId: undefined };
+      });
+      const clearBtn = getByRole("button", { name: /clear origin filter/i });
+      fireEvent.press(clearBtn);
+      await act(async () => {});
+
+      expect(mockSetParams).toHaveBeenCalledWith({ originDeviceId: undefined });
+
+      // Both items now visible
+      expect(getByText("item-from-device-a")).toBeTruthy();
+      expect(getByText("item-from-device-b")).toBeTruthy();
+
+      // Simulate repeat "Jump to feed" from device-a (same param value as the original jump).
+      // Because setParams cleared the param to undefined, the effect dep changes
+      // undefined → "device-a" and the filter re-fires.
+      mockRouteParams = { originDeviceId: "device-a" };
+      rerender(
+        <TestWrapper controller={ctrl}>
+          <FeedScreen />
+        </TestWrapper>,
+      );
+      await act(async () => {});
+
+      // Filter re-applied — device-b hidden again
+      expect(getByText("item-from-device-a")).toBeTruthy();
+      expect(queryByText("item-from-device-b")).toBeNull();
     });
   });
 });
