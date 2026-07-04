@@ -189,6 +189,27 @@ fn hide_window(app: AppHandle, label: String) {
     }
 }
 
+/// Nudge the tray icon into or out of the "unread/pending" visual state.
+///
+/// `pending = true`  → tooltip "CrossClipper — New items" (tray pending).
+/// `pending = false` → revert to normal tooltip.
+///
+/// This is the desktop substitute for the extension's badge increment: the
+/// AlertManager calls this instead of setBadgeText so the tray icon signals
+/// "something arrived" even for items that didn't trigger a notification toast.
+/// A later PR will swap in a distinct icon asset; for now a tooltip change is
+/// the simplest tray-icon affordance Tauri v2 supports without per-asset work.
+#[tauri::command]
+fn set_tray_pending(app: AppHandle, pending: bool) {
+    use tray::{set_tray_state, TrayState};
+    let state = if pending {
+        TrayState::Pending
+    } else {
+        TrayState::Normal
+    };
+    set_tray_state(&app, state);
+}
+
 // ---------------------------------------------------------------------------
 // Invoke-handler macro — include platform-gated commands
 // ---------------------------------------------------------------------------
@@ -218,6 +239,7 @@ pub fn run() {
         ))
         // 4. Standard plugins.
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(HotkeyStateMutex(Mutex::new(hotkeys::HotkeyState::new(
             "Ctrl+Alt+C",
@@ -244,6 +266,7 @@ pub fn run() {
             show_main,
             show_window,
             hide_window,
+            set_tray_pending,
         ])
         .run(tauri::generate_context!())
         .expect("error while running CrossClipper");
@@ -253,6 +276,7 @@ pub fn run() {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(HotkeyStateMutex(Mutex::new(hotkeys::HotkeyState::new(
             "Ctrl+Alt+C",
@@ -264,6 +288,7 @@ pub fn run() {
             show_main,
             show_window,
             hide_window,
+            set_tray_pending,
         ])
         .run(tauri::generate_context!())
         .expect("error while running CrossClipper");

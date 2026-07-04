@@ -159,7 +159,7 @@ pub fn set_tray_state<R: Runtime>(app: &AppHandle<R>, state: TrayState) {
     let tooltip = match state {
         TrayState::Normal => "CrossClipper",
         TrayState::Paused => "CrossClipper — Capture paused",
-        TrayState::Pending => "CrossClipper — Sync pending",
+        TrayState::Pending => "CrossClipper — New items",
     };
     if let Some(tray_handle) = app.try_state::<TrayHandle>() {
         let _ = tray_handle.0.set_tooltip(Some(tooltip));

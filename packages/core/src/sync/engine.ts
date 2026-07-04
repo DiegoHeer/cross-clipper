@@ -42,6 +42,7 @@ export class SyncEngine {
   private listeners: Array<(e: SyncEngineEvent) => void> = [];
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  private pullAttempt = 0;
   private stopped = true;
 
   constructor(private readonly deps: SyncEngineDeps) {}
@@ -106,6 +107,9 @@ export class SyncEngine {
   }
 
   private async resync(): Promise<void> {
+    // Cancel any pending pull-retry timer: a wake/nudge (WS onOpen) or queued follow-up
+    // must attempt immediately rather than waiting out the current backoff delay.
+    clearTimeout(this.retryTimer);
     // Re-entry guard: if a pull is already in-flight, queue exactly one follow-up.
     if (this.syncing) {
       this.resyncQueued = true;
@@ -126,10 +130,11 @@ export class SyncEngine {
         this.stop();
         return;
       }
-      this.retryTimer = setTimeout(() => void this.resync(),
-        this.deps.backoff?.baseMs ?? 1000);
+      this.retryTimer = setTimeout(() => void this.resync(), this.pullBackoffDelay());
       return;
     }
+    // Successful pull: reset the attempt counter so the next failure starts fresh.
+    this.pullAttempt = 0;
     const buffered = this.buffer;
     this.buffer = [];
     this.syncing = false;
@@ -140,6 +145,16 @@ export class SyncEngine {
     this.emit({ type: "status", status: "live" });
     // Run exactly one queued follow-up resync if a reconnect arrived mid-pull.
     if (this.resyncQueued) void this.resync();
+  }
+
+  /** Exponential backoff delay for pull retries, matching the WS reconnect idiom. */
+  private pullBackoffDelay(): number {
+    const base = this.deps.backoff?.baseMs ?? 1000;
+    const max = this.deps.backoff?.maxMs ?? 30000;
+    const random = this.deps.backoff?.random ?? Math.random;
+    const delay = Math.min(max, base * 2 ** this.pullAttempt) * (0.5 + random() * 0.5);
+    this.pullAttempt++;
+    return delay;
   }
 
   private async pull(): Promise<void> {

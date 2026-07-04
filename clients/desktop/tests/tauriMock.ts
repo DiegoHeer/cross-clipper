@@ -68,3 +68,55 @@ export class Store {
 export { Store as LazyStore };
 
 export default Store;
+
+// ---------------------------------------------------------------------------
+// @tauri-apps/plugin-clipboard-manager stub — no-op in jsdom.
+// ---------------------------------------------------------------------------
+export async function writeText(_text: string): Promise<void> {
+  // In tests the clipboard write falls through to navigator.clipboard fallback.
+}
+
+// ---------------------------------------------------------------------------
+// @tauri-apps/plugin-opener stub — no-op in jsdom.
+// ---------------------------------------------------------------------------
+export async function openUrl(_url: string): Promise<void> {
+  // In tests the open-url call is silently ignored.
+}
+
+// ---------------------------------------------------------------------------
+// @tauri-apps/api/core stub — invoke() no-op.
+// ---------------------------------------------------------------------------
+export async function invoke(_cmd: string, _args?: unknown): Promise<unknown> {
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// @tauri-apps/plugin-notification stub — no-op in jsdom.
+// ---------------------------------------------------------------------------
+export async function isPermissionGranted(): Promise<boolean> {
+  return false;
+}
+
+export async function requestPermission(): Promise<"granted" | "denied"> {
+  return "denied";
+}
+
+export function sendNotification(_opts: { title: string; body: string }): void {
+  // no-op in tests
+}
+
+// ---------------------------------------------------------------------------
+// @tauri-apps/plugin-autostart stub — no-op in jsdom.
+// ---------------------------------------------------------------------------
+export async function enable(): Promise<void> {}
+export async function disable(): Promise<void> {}
+export async function isEnabled(): Promise<boolean> {
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// @tauri-apps/plugin-os stub — returns a static hostname.
+// ---------------------------------------------------------------------------
+export async function hostname(): Promise<string | null> {
+  return "test-host";
+}

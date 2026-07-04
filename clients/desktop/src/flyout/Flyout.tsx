@@ -1,7 +1,11 @@
+import { useEffect } from "react";
+import { writeText as clipboardWrite } from "@tauri-apps/plugin-clipboard-manager";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useBridge } from "../main/useBridge";
 import { toDeviceView } from "../shared/model";
 import { FeedCard } from "../ui/FeedCard";
 import { Compose } from "../ui/Compose";
+import { requestBackground } from "../shared/bridge";
 
 /**
  * Flyout surface — desktop spec §3.
@@ -13,6 +17,14 @@ import { Compose } from "../ui/Compose";
  */
 export function Flyout() {
   const { state, api } = useBridge();
+
+  // Clear tray unread badge on mount and whenever the window regains focus.
+  useEffect(() => {
+    const clearUnread = () => void requestBackground({ type: "window_opened" });
+    clearUnread();
+    window.addEventListener("focus", clearUnread);
+    return () => window.removeEventListener("focus", clearUnread);
+  }, []);
 
   const devices = state.devices.map((d) => toDeviceView(d, state.deviceId));
 
@@ -44,12 +56,9 @@ export function Flyout() {
     return p.failed ? "failed" as const : "pending" as const;
   };
 
-  // Tauri clipboard write — use the plugin when the desktop has it wired;
-  // for now use the raw invoke (plugin is declared in PR 1 capabilities).
   const handleCopy = async (body: string) => {
     try {
-      // @ts-expect-error — __TAURI__ global not typed in this tsconfig
-      await window.__TAURI__?.tauri?.invoke("plugin:clipboard-manager|write_text", { text: body });
+      await clipboardWrite(body);
     } catch {
       // Fallback to clipboard API (works in dev/test environments).
       await navigator.clipboard.writeText(body);
@@ -57,10 +66,8 @@ export function Flyout() {
   };
 
   const handleOpen = (url: string) => {
-    // Use the opener plugin (wired in capabilities); ignore in test/dev.
     try {
-      // @ts-expect-error — __TAURI__ global not typed in this tsconfig
-      void window.__TAURI__?.opener?.openUrl(url);
+      void openUrl(url);
     } catch {
       window.open(url, "_blank", "noreferrer");
     }
@@ -139,13 +146,9 @@ export function Flyout() {
   );
 }
 
-// Thin helper — avoids importing requestBackground directly (keeps coupling clear).
+// Thin helper — avoids scattering the bridge call across the JSX.
 function requestBackground_retry(_outboxId: string) {
   // Retry is handled by the background via the bridge.
   // This path is exercised when a pending item enters "failed" state.
-  // Full retry wiring is in Task 11's full-window App; the flyout just shows
-  // the retry affordance — the actual retry RPC is the same bridge call.
-  void import("../shared/bridge").then(({ requestBackground }) =>
-    requestBackground({ type: "retry", outboxId: _outboxId }),
-  );
+  void requestBackground({ type: "retry", outboxId: _outboxId });
 }
