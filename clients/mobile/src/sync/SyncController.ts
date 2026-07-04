@@ -117,6 +117,19 @@ export class SyncController {
 
   private async doWake(): Promise<void> {
     await this.ensureFeed();
+    // Load cached devices immediately so screens render without waiting for a
+    // devices_changed event. The list will be refreshed on devices_changed.
+    if (this.devices.length === 0) {
+      const raw = await this.deps.storage.get(DEVICES_KEY);
+      if (raw) {
+        try {
+          this.devices = JSON.parse(raw) as Device[];
+          this.emit();
+        } catch {
+          // corrupt cache — ignore
+        }
+      }
+    }
     if (this.engine) {
       void this.outbox?.flush();
       return;
@@ -199,6 +212,23 @@ export class SyncController {
   async remove(id: string): Promise<void> {
     await this.client?.deleteItem(id);
     await this.feed.remove(id);
+    this.emit();
+  }
+
+  /** Rename a device. Refreshes the device list on success. */
+  async renameDevice(id: string, name: string): Promise<void> {
+    if (!this.client) throw new Error("not authenticated");
+    const updated = await this.client.renameDevice(id, name);
+    this.devices = this.devices.map((d) => (d.id === id ? updated : d));
+    await this.deps.storage.set(DEVICES_KEY, JSON.stringify(this.devices));
+    this.emit();
+  }
+
+  /** Revoke a device. Refreshes the device list on success. */
+  async revokeDevice(id: string): Promise<void> {
+    if (!this.client) throw new Error("not authenticated");
+    await this.client.revokeDevice(id);
+    this.devices = await this.fetchDevices();
     this.emit();
   }
 
