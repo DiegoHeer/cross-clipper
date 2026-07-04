@@ -3,6 +3,7 @@
  *
  * FeedScreen integration: swipe-right copies; swipe-left defers delete with undo.
  * Amendment A5: delete deferred ~5s; undo cancels; timer fires → exactly one remove.
+ * Finding 2 fix: origin filter via route param.
  */
 import React from "react";
 import { render, fireEvent, act, waitFor } from "@testing-library/react-native";
@@ -15,6 +16,18 @@ import { MemoryStorage } from "@crossclipper/core";
 import { FeedScreen } from "../FeedScreen";
 import * as Clipboard from "expo-clipboard";
 import type { Item, WsLike } from "@crossclipper/core";
+
+// ─── useRoute mock — controls originDeviceId param per test ──────────────────
+
+let mockRouteParams: { originDeviceId?: string } | undefined = undefined;
+
+jest.mock("@react-navigation/native", () => {
+  const actual = jest.requireActual("@react-navigation/native");
+  return {
+    ...actual,
+    useRoute: () => ({ params: mockRouteParams }),
+  };
+});
 
 // ─── Swipeable mock (same approach as swipeableRow tests) ─────────────────────
 jest.mock("react-native-gesture-handler/Swipeable", () => {
@@ -134,6 +147,7 @@ describe("FeedScreen", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     (Clipboard.setStringAsync as jest.Mock).mockClear();
+    mockRouteParams = undefined; // reset filter between tests
   });
 
   afterEach(() => {
@@ -258,6 +272,66 @@ describe("FeedScreen", () => {
     await waitFor(() => {
       expect(mockRemove).toHaveBeenCalledTimes(1);
       expect(mockRemove).toHaveBeenCalledWith(item.id);
+    });
+  });
+
+  describe("origin filter (Finding 2)", () => {
+    function makeItemWithOrigin(id: string, originDeviceId: string): Item {
+      return {
+        id,
+        kind: "text",
+        body: `item-from-${originDeviceId}`,
+        user_id: "u1",
+        origin_device_id: originDeviceId,
+        target_device_id: null,
+        created_at: "2026-01-01T00:00:00",
+        deleted_at: null,
+        sync_seq: 1,
+      } as unknown as Item;
+    }
+
+    it("when originDeviceId param is set, only items from that origin render", async () => {
+      const itemA = makeItemWithOrigin("01ARZ3NDEKTSV4RRFFQ69G5FAV", "device-a");
+      const itemB = makeItemWithOrigin("01BX5ZZKBKACTAV9WEVGEMMVS0", "device-b");
+      mockRouteParams = { originDeviceId: "device-a" };
+
+      const { ctrl } = await makeController([itemA, itemB]);
+      const { queryByText, getByText } = render(
+        <TestWrapper controller={ctrl}>
+          <FeedScreen />
+        </TestWrapper>,
+      );
+      await act(async () => {});
+
+      // Only the device-a item is visible
+      expect(getByText("item-from-device-a")).toBeTruthy();
+      expect(queryByText("item-from-device-b")).toBeNull();
+    });
+
+    it("dismissing the filter chip restores the full feed", async () => {
+      const itemA = makeItemWithOrigin("01ARZ3NDEKTSV4RRFFQ69G5FAV", "device-a");
+      const itemB = makeItemWithOrigin("01BX5ZZKBKACTAV9WEVGEMMVS0", "device-b");
+      mockRouteParams = { originDeviceId: "device-a" };
+
+      const { ctrl } = await makeController([itemA, itemB]);
+      const { queryByText, getByText, getByRole } = render(
+        <TestWrapper controller={ctrl}>
+          <FeedScreen />
+        </TestWrapper>,
+      );
+      await act(async () => {});
+
+      // Filter active — device-b item hidden
+      expect(queryByText("item-from-device-b")).toBeNull();
+
+      // Dismiss the filter chip
+      const clearBtn = getByRole("button", { name: /clear origin filter/i });
+      fireEvent.press(clearBtn);
+      await act(async () => {});
+
+      // Both items now visible
+      expect(getByText("item-from-device-a")).toBeTruthy();
+      expect(getByText("item-from-device-b")).toBeTruthy();
     });
   });
 });
