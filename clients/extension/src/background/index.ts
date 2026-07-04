@@ -1,12 +1,45 @@
 import browser from "webextension-polyfill";
 import { EVENTS_PORT, isPopupRequest } from "../shared/messages";
+import { loadAuth, loadPrefs } from "../shared/settings";
 import { ExtensionStorage } from "../shared/storage";
+import { AlertManager } from "./alerts";
 import { BackgroundController } from "./controller";
 import { browserSocketFactory } from "./socket";
 
+const storage = new ExtensionStorage();
+
+const alerts = new AlertManager({
+  storage,
+  notifications: {
+    // Cast through unknown: the AlertDeps interface uses Record<string,unknown> for testability;
+    // the actual opts passed by AlertManager always satisfy CreateNotificationOptions.
+    create: (id, opts) =>
+      browser.notifications.create(
+        id,
+        opts as unknown as Parameters<(typeof browser.notifications)["create"]>[0],
+      ),
+  },
+  action: browser.action,
+  getPrefs: loadPrefs,
+  getSelfDeviceId: async () => (await loadAuth())?.deviceId ?? null,
+});
+
 const controller = new BackgroundController({
-  storage: new ExtensionStorage(),
+  storage,
   socketFactory: browserSocketFactory,
+  onNewItem: (item) => void alerts.onItem(item),
+});
+controller.onPopupOpened = () => void alerts.clearBadge();
+
+browser.notifications.onClicked.addListener(() => {
+  void browser.action.openPopup().catch(() =>
+    browser.windows.create({
+      url: browser.runtime.getURL("src/popup/index.html"),
+      type: "popup",
+      width: 380,
+      height: 540,
+    }),
+  );
 });
 
 // RPC: popup requests, promise-based replies.
@@ -31,4 +64,4 @@ browser.alarms.onAlarm.addListener((alarm) => {
 });
 void controller.wake();
 
-export { controller }; // consumed by alerts/menus wiring (Tasks 18–19)
+export { controller, alerts }; // consumed by menus wiring (Task 19)
