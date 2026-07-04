@@ -76,6 +76,9 @@ async function main(): Promise<void> {
     onNewItem: (item) => {
       void alertManager.onItem(item);
     },
+    onWindowOpened: () => {
+      void alertManager.clearUnread();
+    },
   });
 
   // Serve PopupRequests from renderer windows

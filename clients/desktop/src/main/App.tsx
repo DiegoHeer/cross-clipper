@@ -27,6 +27,14 @@ export default function App() {
     if (state.ready && onboarding === null) setOnboarding(!state.authed);
   }, [state.ready, state.authed, onboarding]);
 
+  // Clear tray unread badge on mount and whenever the window regains focus.
+  useEffect(() => {
+    const clearUnread = () => void requestBackground({ type: "window_opened" });
+    clearUnread();
+    window.addEventListener("focus", clearUnread);
+    return () => window.removeEventListener("focus", clearUnread);
+  }, []);
+
   const deviceViews = useMemo(
     () => state.devices.map((d) => toDeviceView(d, state.deviceId)),
     [state.devices, state.deviceId],

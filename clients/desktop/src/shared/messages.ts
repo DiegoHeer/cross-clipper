@@ -38,7 +38,8 @@ export type PopupRequest =
   | { type: "rename_device"; deviceId: string; name: string }
   | { type: "revoke_device"; deviceId: string }
   | { type: "sign_out" }
-  | { type: "undo_capture"; outboxId: string };
+  | { type: "undo_capture"; outboxId: string }
+  | { type: "window_opened" };
 
 export type WorkerEvent =
   | { type: "snapshot"; state: StateSnapshot }
@@ -83,6 +84,8 @@ export function isPopupRequest(v: unknown): v is PopupRequest {
       return isStr(v.deviceId);
     case "undo_capture":
       return isStr(v.outboxId);
+    case "window_opened":
+      return true;
     default:
       return false;
   }

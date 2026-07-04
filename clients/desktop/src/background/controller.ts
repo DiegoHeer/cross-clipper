@@ -48,6 +48,8 @@ export interface ControllerDeps {
   onNewItem?: (item: Item) => void;
   /** Called with every capture result for the Rust toast window (wired Task 14). */
   onCaptureResult?: (r: CaptureResult) => void;
+  /** Called when any window is opened/focused — clears the tray unread badge. */
+  onWindowOpened?: () => void;
 }
 
 export class BackgroundController {
@@ -345,6 +347,9 @@ export class BackgroundController {
         }
         return { ok: true };
       }
+      case "window_opened":
+        this.deps.onWindowOpened?.();
+        return { ok: true };
       case "sign_out": {
         this.engine?.stop();
         this.outbox?.stop();

@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { writeText as clipboardWrite } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useBridge } from "../main/useBridge";
 import { toDeviceView } from "../shared/model";
 import { FeedCard } from "../ui/FeedCard";
 import { Compose } from "../ui/Compose";
+import { requestBackground } from "../shared/bridge";
 
 /**
  * Flyout surface — desktop spec §3.
@@ -15,6 +17,14 @@ import { Compose } from "../ui/Compose";
  */
 export function Flyout() {
   const { state, api } = useBridge();
+
+  // Clear tray unread badge on mount and whenever the window regains focus.
+  useEffect(() => {
+    const clearUnread = () => void requestBackground({ type: "window_opened" });
+    clearUnread();
+    window.addEventListener("focus", clearUnread);
+    return () => window.removeEventListener("focus", clearUnread);
+  }, []);
 
   const devices = state.devices.map((d) => toDeviceView(d, state.deviceId));
 
@@ -136,13 +146,9 @@ export function Flyout() {
   );
 }
 
-// Thin helper — avoids importing requestBackground directly (keeps coupling clear).
+// Thin helper — avoids scattering the bridge call across the JSX.
 function requestBackground_retry(_outboxId: string) {
   // Retry is handled by the background via the bridge.
   // This path is exercised when a pending item enters "failed" state.
-  // Full retry wiring is in Task 11's full-window App; the flyout just shows
-  // the retry affordance — the actual retry RPC is the same bridge call.
-  void import("../shared/bridge").then(({ requestBackground }) =>
-    requestBackground({ type: "retry", outboxId: _outboxId }),
-  );
+  void requestBackground({ type: "retry", outboxId: _outboxId });
 }
