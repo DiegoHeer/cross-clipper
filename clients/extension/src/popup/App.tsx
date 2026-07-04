@@ -1,21 +1,47 @@
 import { useMemo, useState } from "react";
-import { DeviceRail } from "./components/DeviceRail";
+import browser from "webextension-polyfill";
+import type { Item } from "@crossclipper/core";
+import { Banner } from "./components/Banner";
 import { Compose } from "./components/Compose";
-import { FeedCard } from "./components/FeedCard";
-import { fixtureDevices, fixtureEntries } from "./fixtures";
-import { platformIcon } from "../shared/model";
+import { DeviceRail } from "./components/DeviceRail";
+import { Feed } from "./components/Feed";
+import type { FeedEntry } from "./components/FeedCard";
+import { platformIcon, toDeviceView } from "../shared/model";
+import { useWorker } from "./useWorker";
 
 export default function App() {
+  const { state, api } = useWorker();
   const [filter, setFilter] = useState<string | null>(null);
-  const devices = fixtureDevices;
-  const entries = fixtureEntries;
 
-  const visible = useMemo(
-    () => (filter ? entries.filter((e) => e.item.origin_device_id === filter) : entries),
-    [entries, filter],
+  const deviceViews = useMemo(
+    () => state.devices.map((d) => toDeviceView(d, state.deviceId)),
+    [state.devices, state.deviceId],
   );
-  const nameOf = (id: string) => devices.find((d) => d.id === id)?.name ?? "Unknown device";
-  const iconOf = (id: string) => platformIcon(devices.find((d) => d.id === id)?.platform ?? "");
+
+  const entries = useMemo<FeedEntry[]>(() => {
+    const pendingEntries: FeedEntry[] = state.pending.map((p) => ({
+      item: {
+        id: p.id,
+        kind: p.kind,
+        body: p.body,
+        origin_device_id: state.deviceId ?? "",
+        target_device_id: p.targetDeviceId,
+        blob_id: null,
+        created_at: new Date().toISOString().slice(0, 19),
+        deleted_at: null,
+      } as Item,
+      sendState: p.failed ? ("failed" as const) : ("pending" as const),
+    }));
+    const synced: FeedEntry[] = state.items.map((item) => ({ item }));
+    const all = [...pendingEntries, ...synced];
+    return filter ? all.filter((e) => e.item.origin_device_id === filter) : all;
+  }, [state.pending, state.items, state.deviceId, filter]);
+
+  const nameOf = (id: string) => deviceViews.find((d) => d.id === id)?.name ?? "Unknown device";
+  const iconOf = (id: string) =>
+    platformIcon(deviceViews.find((d) => d.id === id)?.platform ?? "");
+
+  if (!state.ready) return <div className="app" />;
 
   return (
     <div className="app">
@@ -25,27 +51,23 @@ export default function App() {
         </span>
         <button aria-label="Settings">⚙</button>
       </header>
-      <div />
+      {state.authed && state.status !== "live" ? <Banner kind="reconnecting" /> : <div />}
       <div className="main">
-        <DeviceRail devices={devices} selected={filter} onSelect={setFilter} />
-        <div className="feed">
-          {visible.length === 0 && (
-            <p className="empty">Copy something on another device, or type below.</p>
-          )}
-          {visible.map((entry) => (
-            <FeedCard
-              key={entry.item.id}
-              entry={entry}
-              originName={nameOf(entry.item.origin_device_id)}
-              originIcon={iconOf(entry.item.origin_device_id)}
-              onCopy={(body) => void navigator.clipboard.writeText(body)}
-              onOpen={(url) => window.open(url)}
-              onDelete={() => {}}
-            />
-          ))}
-        </div>
+        <DeviceRail devices={deviceViews} selected={filter} onSelect={setFilter} />
+        <Feed
+          entries={entries}
+          nameOf={nameOf}
+          iconOf={iconOf}
+          onCopy={(body) => void navigator.clipboard.writeText(body)}
+          onOpen={(url) => void browser.tabs.create({ url })}
+          onDelete={(id) => void api.deleteItem(id)}
+          onRetry={(id) => void api.retry(id)}
+        />
       </div>
-      <Compose devices={devices} onSend={() => {}} />
+      <Compose
+        devices={deviceViews}
+        onSend={(kind, body, target) => void api.send(kind, body, target)}
+      />
     </div>
   );
 }
