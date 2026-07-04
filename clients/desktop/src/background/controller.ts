@@ -66,11 +66,13 @@ export class BackgroundController {
 
   /**
    * Capture tracking for undo.
-   * outboxIdToItemId: populated when outbox delivers (acked) → use for undo.
+   * deliveredIds: outbox ids that have been acked by the server.
+   *   The server echoes the client-generated ULID as the item id (protocol
+   *   invariant), so outboxId === itemId and a Set is sufficient.
    * pendingCancelIds: outboxIds whose undo arrived before delivery; on
    *   delivery we immediately delete the server item.
    */
-  private outboxIdToItemId = new Map<string, string>();
+  private deliveredIds = new Set<string>();
   private pendingCancelIds = new Set<string>();
 
   constructor(private readonly deps: ControllerDeps) {
@@ -212,13 +214,13 @@ export class BackgroundController {
     if (e.type === "delivered") {
       const outboxId = e.item.id; // server echoes the client-generated ULID as item id
 
-      // Track the mapping for undo
-      this.outboxIdToItemId.set(outboxId, e.item.id);
+      // Track delivery for undo (outboxId === itemId — protocol invariant)
+      this.deliveredIds.add(outboxId);
 
       // If undo arrived before delivery (in-flight race), delete immediately
       if (this.pendingCancelIds.has(outboxId)) {
         this.pendingCancelIds.delete(outboxId);
-        this.outboxIdToItemId.delete(outboxId);
+        this.deliveredIds.delete(outboxId);
         void this.savePendingCancels();
         try {
           await this.client?.deleteItem(e.item.id);
@@ -343,10 +345,11 @@ export class BackgroundController {
         void this.broadcastEvent({ type: "devices", devices: await this.fetchDevices() });
         return { ok: true };
       case "undo_capture": {
-        const itemId = this.outboxIdToItemId.get(req.outboxId);
+        // outboxId === itemId by protocol invariant (server echoes client ULID)
+        const itemId = this.deliveredIds.has(req.outboxId) ? req.outboxId : undefined;
         if (itemId) {
           // Already delivered — delete the server item
-          this.outboxIdToItemId.delete(req.outboxId);
+          this.deliveredIds.delete(req.outboxId);
           try {
             await this.client?.deleteItem(itemId);
             if (await this.feed.remove(itemId)) {
@@ -382,7 +385,7 @@ export class BackgroundController {
         this.client = null;
         this.auth = null;
         this.failed.clear();
-        this.outboxIdToItemId.clear();
+        this.deliveredIds.clear();
         this.pendingCancelIds.clear();
         this.status = "stopped";
         await this.clearAuth();
