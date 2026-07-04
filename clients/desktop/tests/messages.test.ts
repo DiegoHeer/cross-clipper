@@ -43,16 +43,6 @@ describe("background→renderer event guard", () => {
       { type: "outbox_changed", pending: [] },
       { type: "devices", devices: [] },
       { type: "auth_required" },
-      {
-        type: "capture_result",
-        state: "synced",
-        snippet: "hello",
-        outboxId: "01X",
-      },
-      { type: "capture_result", state: "sensitive" },
-      { type: "capture_result", state: "empty" },
-      { type: "capture_result", state: "queued" },
-      { type: "capture_result", state: "unsupported" },
       { type: "toast_update", outboxId: "01X", state: "synced" },
     ];
     for (const msg of good) expect(isWorkerEvent(msg)).toBe(true);
@@ -61,7 +51,7 @@ describe("background→renderer event guard", () => {
   it("rejects junk", () => {
     expect(isWorkerEvent({ type: "status" })).toBe(false); // missing status value
     expect(isWorkerEvent({ type: "nope" })).toBe(false);
-    expect(isWorkerEvent({ type: "capture_result" })).toBe(false); // missing state
+    expect(isWorkerEvent({ type: "capture_result" })).toBe(false); // vestigial — no longer a WorkerEvent
     expect(isWorkerEvent({ type: "toast_update", outboxId: "x" })).toBe(false); // missing state
     expect(isWorkerEvent(null)).toBe(false);
   });

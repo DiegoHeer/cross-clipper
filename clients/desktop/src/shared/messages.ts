@@ -49,12 +49,6 @@ export type WorkerEvent =
   | { type: "outbox_changed"; pending: PendingSend[] }
   | { type: "devices"; devices: Device[] }
   | { type: "auth_required" }
-  | {
-      type: "capture_result";
-      state: "synced" | "queued" | "sensitive" | "empty" | "unsupported" | "cancelled";
-      snippet?: string;
-      outboxId?: string;
-    }
   | { type: "toast_update"; outboxId: string; state: "synced" | "cancelled" };
 
 const isStr = (v: unknown): v is string => typeof v === "string";
@@ -91,15 +85,6 @@ export function isPopupRequest(v: unknown): v is PopupRequest {
   }
 }
 
-const CAPTURE_STATES = new Set([
-  "synced",
-  "queued",
-  "sensitive",
-  "empty",
-  "unsupported",
-  "cancelled",
-]);
-
 export function isWorkerEvent(v: unknown): v is WorkerEvent {
   if (!rec(v) || !isStr(v.type)) return false;
   switch (v.type) {
@@ -117,8 +102,6 @@ export function isWorkerEvent(v: unknown): v is WorkerEvent {
       return Array.isArray(v.devices);
     case "auth_required":
       return true;
-    case "capture_result":
-      return isStr(v.state) && CAPTURE_STATES.has(v.state as string);
     case "toast_update":
       return isStr(v.outboxId) && isStr(v.state);
     default:
