@@ -60,7 +60,16 @@ describe("tokens.css radius scale", () => {
       join(import.meta.dirname, "../src/theme/tokens.css"),
       "utf8",
     );
+    // WARNING: the regex /:root\s*\{([^}]*)\}/ stops at the FIRST closing
+    // brace, so it will silently produce an empty (or truncated) rootBlock if
+    // a nested block (e.g. @layer, a selector, or a media query) is ever added
+    // inside :root.  If the sentinel assertion below starts failing while the
+    // token is visibly present in tokens.css, this regex is likely the culprit
+    // and should be replaced with a proper CSS parser.
     const rootBlock = css.match(/:root\s*\{([^}]*)\}/)?.[1] ?? "";
+    // Sentinel: if extraction silently failed, rootBlock would be "" and all
+    // subsequent assertions would pass vacuously — catch that here.
+    expect(rootBlock).toContain("--accent:");
     expect(rootBlock).toContain("--radius-sm:");
     expect(rootBlock).toContain("--radius-md:");
     expect(rootBlock).toContain("--radius-lg:");

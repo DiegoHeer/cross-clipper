@@ -154,4 +154,29 @@ describe("Feed pill — own-send suppression", () => {
     await userEvent.click(pill);
     expect(screen.queryByRole("button", { name: /new item/i })).not.toBeInTheDocument();
   });
+
+  it("pill DOES increment when selfDeviceId is null and a confirmed own-device item arrives (conservative fallback: origin guard disabled, only pending guard applies)", () => {
+    // Pre-snapshot state: selfDeviceId is not yet known (null).
+    // The origin guard that suppresses own-device items is disabled because we
+    // cannot compare origin_device_id to an unknown self ID.  Only the
+    // sendState=pending guard still applies.  A CONFIRMED (non-pending) item
+    // that happens to originate from this device therefore DOES trigger the
+    // pill — the intentional degraded behaviour while the snapshot is in-flight.
+    const { rerender, container } = render(
+      <Feed {...baseProps} selfDeviceId={null} entries={[makeEntry("01B", "d-other")]} />,
+    );
+    simulateScrollDown(container);
+
+    // Confirmed item with origin_device_id matching what will eventually be
+    // selfDeviceId — but selfDeviceId is null so the guard is blind to it.
+    rerender(
+      <Feed
+        {...baseProps}
+        selfDeviceId={null}
+        entries={[makeEntry("01C", "d-self"), makeEntry("01B", "d-other")]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /new item/i })).toBeInTheDocument();
+  });
 });
