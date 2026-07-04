@@ -10,6 +10,7 @@ export interface OutboxEntry {
   id: string;                 // client-generated ULID = idempotency key
   kind: "text" | "link";
   body: string;
+  target_device_id?: string;  // optional notification target (not visibility filter)
   attempts: number;
 }
 
@@ -53,9 +54,11 @@ export class Outbox {
     return [...this.entries];
   }
 
-  async send(kind: "text" | "link", body: string): Promise<string> {
+  async send(kind: "text" | "link", body: string, targetDeviceId?: string): Promise<string> {
     const id = (this.deps.ulidFn ?? ulid)();
-    this.entries.push({ id, kind, body, attempts: 0 });
+    const entry: OutboxEntry = { id, kind, body, attempts: 0 };
+    if (targetDeviceId) entry.target_device_id = targetDeviceId;
+    this.entries.push(entry);
     await this.persist();
     void this.flush();
     return id;
@@ -73,8 +76,12 @@ export class Outbox {
       while (this.entries.length > 0 && !this.stopped) {
         const entry = this.entries[0]!;
         try {
-          const item = await this.deps.client.createItem(
-            { id: entry.id, kind: entry.kind, body: entry.body });
+          const item = await this.deps.client.createItem({
+            id: entry.id,
+            kind: entry.kind,
+            body: entry.body,
+            ...(entry.target_device_id ? { target_device_id: entry.target_device_id } : {}),
+          });
           this.entries.shift();
           await this.persist();
           this.deps.onEvent?.({ type: "delivered", item });

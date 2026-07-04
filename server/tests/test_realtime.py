@@ -189,6 +189,10 @@ def test_revoke_closes_revoked_ws_survivor_gets_device_changed(client):
         # Open B's socket and immediately check it's alive.
         with pytest.raises(WebSocketDisconnect) as exc_info:
             with client.websocket_connect(f"/api/v1/ws?token={token_b}") as ws_b:
+                # B's connect is a presence transition → A receives device_changed.
+                # Drain it now so the queue is clean for the revocation event.
+                assert ws_a.receive_json() == {"type": "device_changed"}
+
                 # Confirm B's socket is live before revocation.
                 ws_b.send_json({"type": "ping"})
                 assert ws_b.receive_json() == {"type": "pong"}
