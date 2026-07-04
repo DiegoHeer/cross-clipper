@@ -1,7 +1,21 @@
-import type { Appearance, ThemeSetting } from "../../theme/theme";
-import { applyAppearance } from "../../theme/theme";
+import { type Appearance, type ThemeSetting, applyAppearance } from "../../theme/theme";
 
-export const ACCENT_PRESETS = ["#d97706", "#2563eb", "#16a34a", "#7c3aed", "#e11d48"];
+export const ACCENT_PRESETS: string[] = [
+  "#d97706", // amber (default)
+  "#2563eb", // blue
+  "#16a34a", // green
+  "#dc2626", // red
+  "#7c3aed", // violet
+  "#0891b2", // cyan
+  "#db2777", // pink
+  "#ea580c", // orange
+];
+
+const THEME_OPTIONS: { value: ThemeSetting; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
 
 export interface ThemeControlsProps {
   appearance: Appearance;
@@ -17,46 +31,44 @@ export function ThemeControls({ appearance, onChange }: ThemeControlsProps) {
 
   return (
     <div className="theme-controls">
-      <div className="chips" role="group" aria-label="Theme">
-        {(["light", "dark", "auto"] as ThemeSetting[]).map((t) => (
-          <button
-            key={t}
-            className="chip"
-            aria-pressed={appearance.theme === t}
-            onClick={() => update({ theme: t })}
-          >
-            {t[0]!.toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
-      <div className="chips" role="group" aria-label="Accent color">
-        {ACCENT_PRESETS.map((hex) => (
-          <button
-            key={hex}
-            className="swatch"
-            style={{ background: hex }}
-            aria-label={`Accent ${hex}`}
-            aria-pressed={appearance.accent === hex}
-            onClick={() => update({ accent: hex })}
+      <fieldset className="theme-toggle">
+        <legend>Theme</legend>
+        <div className="chips" role="group" aria-label="Theme">
+          {THEME_OPTIONS.map(({ value, label }) => (
+            <button
+              key={value}
+              className={`chip${appearance.theme === value ? " selected" : ""}`}
+              aria-pressed={appearance.theme === value}
+              onClick={() => update({ theme: value })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="accent-swatches">
+        <legend>Accent color</legend>
+        <div className="swatch-row" role="group" aria-label="Accent color presets">
+          {ACCENT_PRESETS.map((color) => (
+            <button
+              key={color}
+              aria-label={`accent ${color}`}
+              aria-pressed={appearance.accent === color}
+              className={`swatch${appearance.accent === color ? " selected" : ""}`}
+              style={{ backgroundColor: color }}
+              onClick={() => update({ accent: color })}
+            />
+          ))}
+        </div>
+        <label className="custom-accent">
+          Custom
+          <input
+            type="color"
+            value={appearance.accent}
+            onChange={(e) => update({ accent: e.target.value })}
           />
-        ))}
-        <input
-          type="color"
-          aria-label="Custom accent"
-          value={appearance.accent}
-          onChange={(e) => update({ accent: e.target.value })}
-        />
-      </div>
-      <article className="card preview-card">
-        <header className="card-header">
-          <span>🌐 Preview</span>
-          <time className="text-muted">just now</time>
-        </header>
-        <p className="card-body">This is how your feed will look.</p>
-        <footer className="card-actions">
-          <button>⧉ Copy</button>
-        </footer>
-      </article>
+        </label>
+      </fieldset>
     </div>
   );
 }

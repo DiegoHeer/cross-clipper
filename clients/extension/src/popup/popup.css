@@ -77,3 +77,13 @@ body,
 .warning { color: var(--danger); font-size: 12px; }
 .error { color: var(--danger); font-size: 12px; }
 .success { color: var(--success); font-size: 12px; }
+.settings { grid-template-rows: auto auto auto 1fr; }
+.status-card { margin: var(--space-2) var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); }
+.tabs { padding: 0 var(--space-3); }
+.tab-body { overflow-y: auto; padding: var(--space-2) var(--space-3); }
+.device-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.device-row { display: flex; align-items: center; gap: var(--space-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2); }
+.device-main { flex: 1; display: flex; flex-direction: column; }
+.presence { font-size: 11px; }
+.badge { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 0 var(--space-2); font-style: normal; font-size: 10px; margin-left: var(--space-1); }
+.nudge { background: var(--danger); color: #fff; border-radius: 999px; padding: 0 var(--space-2); font-style: normal; font-size: 10px; margin-left: var(--space-1); }

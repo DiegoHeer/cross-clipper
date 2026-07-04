@@ -7,12 +7,14 @@ import { DeviceRail } from "./components/DeviceRail";
 import { Feed } from "./components/Feed";
 import type { FeedEntry } from "./components/FeedCard";
 import { platformIcon, toDeviceView } from "../shared/model";
+import { Settings } from "./settings/Settings";
 import { useWorker } from "./useWorker";
 import { Onboarding } from "./onboarding/Onboarding";
 
 export default function App() {
   const { state, api } = useWorker();
   const [filter, setFilter] = useState<string | null>(null);
+  const [view, setView] = useState<"feed" | "settings">("feed");
 
   const deviceViews = useMemo(
     () => state.devices.map((d) => toDeviceView(d, state.deviceId)),
@@ -55,13 +57,17 @@ export default function App() {
     );
   }
 
+  if (view === "settings") {
+    return <Settings state={state} api={api} onBack={() => setView("feed")} />;
+  }
+
   return (
     <div className="app">
       <header className="header">
         <span>
           <span aria-hidden>⧉</span> <span>CrossClipper</span>
         </span>
-        <button aria-label="Settings">⚙</button>
+        <button aria-label="Settings" onClick={() => setView("settings")}>⚙</button>
       </header>
       {state.authed && state.status !== "live" ? <Banner kind="reconnecting" /> : <div />}
       <div className="main">
