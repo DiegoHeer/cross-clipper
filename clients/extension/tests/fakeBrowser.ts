@@ -33,6 +33,18 @@ export function makeFakeBrowser() {
     alarms: [] as unknown[],
   };
 
+  const makePortInternal = (name: string): FakePort => {
+    const port: FakePort = {
+      name,
+      onMessage: makeEvent(),
+      onDisconnect: makeEvent(),
+      sent: [],
+      postMessage: (msg) => port.sent.push(msg),
+      disconnect: () => port.onDisconnect.emit(),
+    };
+    return port;
+  };
+
   const browser = {
     storage: {
       local: {
@@ -60,6 +72,7 @@ export function makeFakeBrowser() {
         const results = onMessage.emit(msg, {});
         return Promise.resolve(results.find((r) => r !== undefined));
       },
+      connect: ({ name }: { name: string }) => makePortInternal(name),
       onInstalled: makeEvent(),
       onStartup: makeEvent(),
       getURL: (p: string) => `chrome-extension://fake/${p}`,
@@ -87,17 +100,7 @@ export function makeFakeBrowser() {
     windows: { create: async (opts: unknown) => void calls.windows.push(opts) },
   };
 
-  const makePort = (name: string): FakePort => {
-    const port: FakePort = {
-      name,
-      onMessage: makeEvent(),
-      onDisconnect: makeEvent(),
-      sent: [],
-      postMessage: (msg) => port.sent.push(msg),
-      disconnect: () => port.onDisconnect.emit(),
-    };
-    return port;
-  };
+  const makePort = makePortInternal;
 
   return { browser, storageData, calls, makePort };
 }
