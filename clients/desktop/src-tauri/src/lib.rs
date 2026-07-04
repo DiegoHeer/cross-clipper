@@ -385,11 +385,10 @@ fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                 let _ = window.hide();
             }
         }
-        // Flyout blur-hide: when focus leaves the flyout, hide it.
-        // Guard: don't hide if the flyout was just shown via the tray click
-        // (there's a brief blur event from the previously-focused window).
-        // We use a small workaround: check visibility after hide since
-        // hide() is idempotent.
+        // Flyout blur-hide: unconditionally hide when the flyout loses focus
+        // (decision 13).  There is no guard for the brief blur that fires after
+        // a tray-click shows the window — hide() is idempotent and show/set_focus
+        // immediately follows, so the window is visible within the same tick.
         tauri::WindowEvent::Focused(false) if window.label() == "flyout" => {
             let _ = window.hide();
         }
