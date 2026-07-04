@@ -132,7 +132,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health */
+        /**
+         * Health
+         * @description Readiness + server identity for client onboarding (phase 2 plan, ambiguity 1).
+         */
         get: operations["health_health_get"];
         put?: never;
         post?: never;
@@ -179,6 +182,17 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HealthOut */
+        HealthOut: {
+            /** App */
+            app: string;
+            /** Registration Open */
+            registration_open: boolean;
+            /** Status */
+            status: string;
+            /** Version */
+            version: string;
         };
         /** ItemIn */
         ItemIn: {
@@ -561,7 +575,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HealthOut"];
                 };
             };
         };

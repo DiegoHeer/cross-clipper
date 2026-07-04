@@ -80,6 +80,34 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HealthOut": {
+        "properties": {
+          "app": {
+            "title": "App",
+            "type": "string"
+          },
+          "registration_open": {
+            "title": "Registration Open",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "app",
+          "version",
+          "registration_open"
+        ],
+        "title": "HealthOut",
+        "type": "object"
+      },
       "ItemIn": {
         "properties": {
           "body": {
@@ -732,12 +760,15 @@
     },
     "/health": {
       "get": {
+        "description": "Readiness + server identity for client onboarding (phase 2 plan, ambiguity 1).",
         "operationId": "health_health_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/HealthOut"
+                }
               }
             },
             "description": "Successful Response"
