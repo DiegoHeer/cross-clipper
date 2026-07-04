@@ -24,6 +24,8 @@ import type { SyncSnapshot } from "./SyncController";
 interface SyncContextValue extends SyncSnapshot {
   send(kind: "text" | "link", body: string, targetDeviceId?: string): Promise<string>;
   remove(id: string): Promise<void>;
+  renameDevice(id: string, name: string): Promise<void>;
+  revokeDevice(id: string): Promise<void>;
 }
 
 const SyncContext = createContext<SyncContextValue | null>(null);
@@ -67,9 +69,16 @@ export function SyncProvider({ children, controller: injected }: SyncProviderPro
 
   const remove = useCallback((id: string) => ctrl.remove(id), [ctrl]);
 
+  const renameDevice = useCallback(
+    (id: string, name: string) => ctrl.renameDevice(id, name),
+    [ctrl],
+  );
+
+  const revokeDevice = useCallback((id: string) => ctrl.revokeDevice(id), [ctrl]);
+
   const value = useMemo(
-    () => ({ ...snapshot, send, remove }),
-    [snapshot, send, remove],
+    () => ({ ...snapshot, send, remove, renameDevice, revokeDevice }),
+    [snapshot, send, remove, renameDevice, revokeDevice],
   );
 
   return React.createElement(SyncContext.Provider, { value }, children);

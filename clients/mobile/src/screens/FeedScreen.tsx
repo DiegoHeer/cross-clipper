@@ -8,16 +8,18 @@
  * - Docked Composer (B1) at bottom with TargetChips header row.
  * - Empty-feed hint when no items.
  */
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   FlatList,
   Text,
+  TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import { useRoute, type RouteProp } from "@react-navigation/native";
 import type { Item, Device } from "@crossclipper/core";
 
 import { useTheme } from "../theme/ThemeProvider";
@@ -28,6 +30,7 @@ import { CopiedChip } from "../feed/CopiedChip";
 import { UndoBar } from "../feed/UndoBar";
 import { Composer } from "../feed/Composer";
 import { TargetChips } from "../feed/TargetChips";
+import type { RootTabParamList } from "../nav/RootNavigator";
 
 const UNDO_DELAY_MS = 5000;
 
@@ -43,6 +46,17 @@ interface PendingDelete {
 export function FeedScreen(): React.JSX.Element {
   const tokens = useTheme();
   const { items, devices, selfDeviceId, send, remove } = useSync();
+
+  // ─── Origin filter (from DeviceDetail → Jump to feed) ─────────────────────
+  const route = useRoute<RouteProp<RootTabParamList, "Feed">>();
+  const [originFilter, setOriginFilter] = useState<string | null>(
+    route.params?.originDeviceId ?? null,
+  );
+
+  // Sync originFilter when route param changes (re-navigation with a different device)
+  useEffect(() => {
+    setOriginFilter(route.params?.originDeviceId ?? null);
+  }, [route.params?.originDeviceId]);
 
   // Expanded state keyed by item id
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -66,8 +80,12 @@ export function FeedScreen(): React.JSX.Element {
   // ─── Visible items ──────────────────────────────────────────────────────────
 
   // Items already sorted newest-first by ULID from FeedStore.
-  // Exclude items currently in the optimistic-delete set.
-  const visibleItems = items.filter((i) => !deletedIds.has(i.id));
+  // Exclude items in the optimistic-delete set; apply origin filter if active.
+  const visibleItems = items.filter((i) => {
+    if (deletedIds.has(i.id)) return false;
+    if (originFilter && i.origin_device_id !== originFilter) return false;
+    return true;
+  });
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
@@ -194,6 +212,23 @@ export function FeedScreen(): React.JSX.Element {
         onChange={setTarget}
       />
 
+      {/* Origin filter chip — dismissible, shows device name */}
+      {originFilter && (
+        <View style={[styles.filterChipRow, { backgroundColor: tokens.surface, borderBottomColor: tokens.border }]}>
+          <Text style={[styles.filterChipLabel, { color: tokens.text }]}>
+            From: {deviceMap.get(originFilter)?.name ?? originFilter}
+          </Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Clear origin filter"
+            onPress={() => setOriginFilter(null)}
+            style={styles.filterChipDismiss}
+          >
+            <Text style={[styles.filterChipX, { color: tokens.textMuted }]}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Feed list */}
       <FlatList
         style={styles.list}
@@ -240,5 +275,24 @@ const styles = StyleSheet.create({
   },
   copiedOverlay: {
     position: "relative",
+  },
+  filterChipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  filterChipLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  filterChipDismiss: {
+    paddingLeft: 8,
+    paddingVertical: 4,
+  },
+  filterChipX: {
+    fontSize: 14,
   },
 });

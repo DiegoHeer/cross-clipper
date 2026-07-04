@@ -22,7 +22,7 @@ export type DevicesStackParamList = {
 };
 
 export type RootTabParamList = {
-  Feed: undefined;
+  Feed: { originDeviceId?: string } | undefined;
   DevicesStack: undefined;
   Settings: undefined;
 };
