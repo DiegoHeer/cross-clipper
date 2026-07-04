@@ -12,7 +12,7 @@ export interface StoreLike {
  * Keys are stored as raw strings (no extra JSON serialisation layer).
  * Core owns cc.cursor / cc.outbox; this store also holds cc.items,
  * cc.itemTombstones, cc.devices, cc.auth, cc.prefs, cc.appearanceStored,
- * cc.serverVersion, cc.hotkeys, cc.alert.watermark, cc.autostartInitialized.
+ * cc.serverVersion, cc.hotkeys, cc.alert.watermark, cc.autostartInitialized, cc.pendingCancels.
  *
  * Sign-out convention (decision 2): because core has no `remove` method,
  * sign-out writes "" / "[]" to the relevant keys rather than deleting them.
