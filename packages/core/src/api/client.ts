@@ -1,4 +1,4 @@
-import type { Device, Item, ItemKind, ItemsPage, LoginOut } from "../types";
+import type { Device, HealthOut, Item, ItemKind, ItemsPage, LoginOut } from "../types";
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -68,6 +68,30 @@ export class ApiClient {
     return (await res.json()) as T;
   }
 
+  /** Root-level readiness + server identity — used by client onboarding.
+   *  NOT under /api/v1 (Phase 1 decision 2). */
+  async health(): Promise<HealthOut> {
+    let res: Response;
+    try {
+      res = await this.fetchFn(`${this.opts.baseUrl}/health`, { method: "GET" });
+    } catch (err) {
+      throw new NetworkError(String(err));
+    }
+    if (!res.ok) {
+      let code = "unknown_error";
+      let message = `HTTP ${res.status}`;
+      try {
+        const data = (await res.json()) as { code?: string; message?: string };
+        if (data.code) code = data.code;
+        if (data.message) message = data.message;
+      } catch {
+        /* non-JSON body */
+      }
+      throw new ApiError(res.status, code, message);
+    }
+    return (await res.json()) as HealthOut;
+  }
+
   register(email: string, password: string): Promise<{ user_id: string }> {
     return this.request("POST", "/auth/register", { email, password });
   }
@@ -85,7 +109,7 @@ export class ApiClient {
     return this.request("GET", `/items${qs ? `?${qs}` : ""}`);
   }
 
-  createItem(input: { id?: string; kind: ItemKind; body: string }): Promise<Item> {
+  createItem(input: { id?: string; kind: ItemKind; body: string; target_device_id?: string }): Promise<Item> {
     return this.request("POST", "/items", input);
   }
 
