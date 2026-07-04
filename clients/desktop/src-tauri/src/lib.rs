@@ -239,6 +239,7 @@ pub fn run() {
         ))
         // 4. Standard plugins.
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(HotkeyStateMutex(Mutex::new(hotkeys::HotkeyState::new(
             "Ctrl+Alt+C",
@@ -275,6 +276,7 @@ pub fn run() {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(HotkeyStateMutex(Mutex::new(hotkeys::HotkeyState::new(
             "Ctrl+Alt+C",
