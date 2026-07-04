@@ -134,3 +134,108 @@ def test_second_socket_same_device_no_broadcast(client):
             # No broadcast expected — ping/pong arrives without device_changed.
             ws_first.send_json({"type": "ping"})
             assert ws_first.receive_json() == {"type": "pong"}
+
+
+# ---------------------------------------------------------------------------
+# Dead-socket prune tests (hub unit tests — fake-socket style)
+# ---------------------------------------------------------------------------
+
+
+import asyncio
+
+
+class DeadSocket:
+    """Raises on send_json — simulates a client that vanished without a close handshake."""
+
+    async def send_json(self, event) -> None:
+        raise RuntimeError("connection lost")
+
+
+def test_broadcast_prunes_dead_socket_live_receives():
+    """broadcast() delivers to the live socket and prunes the dead one."""
+    hub = Hub()
+    dead = DeadSocket()
+    hub.add("u1", "d2", dead)
+
+    # Live socket — track received events via an async send_json override.
+    live = FakeSocket()
+    received: list = []
+
+    async def _live_recv(e):  # type: ignore[override]
+        received.append(e)
+
+    live.send_json = _live_recv  # type: ignore[method-assign]
+    hub.add("u1", "d1", live)
+
+    async def _run():
+        await hub.broadcast("u1", {"type": "item_new"})
+
+    asyncio.get_event_loop().run_until_complete(_run())
+
+    # Live socket received the original event.
+    assert {"type": "item_new"} in received
+    # Dead socket pruned from registry.
+    assert not hub.is_online("u1", "d2")
+    # Live socket still registered.
+    assert hub.is_online("u1", "d1")
+    # Offline transition broadcast (device_changed) also reached the live device.
+    assert {"type": "device_changed"} in received
+
+
+def test_broadcast_dead_socket_last_triggers_offline_transition():
+    """When the dead socket was the device's only socket, offline transition fires.
+
+    The transition is signalled by remove() returning True.  The test verifies
+    hub state directly (is_online goes False) rather than the broadcast side-effect,
+    because the hub unit tests don't have a running app to receive device_changed.
+    """
+    hub = Hub()
+    dead = DeadSocket()
+    hub.add("u1", "d_dead", dead)
+    # A second device to receive any potential broadcast.
+    live = FakeSocket()
+    events_on_live: list = []
+
+    async def _live_send(e):  # type: ignore[override]
+        events_on_live.append(e)
+
+    live.send_json = _live_send  # type: ignore[method-assign]
+    hub.add("u1", "d_live", live)
+
+    async def _run():
+        await hub.broadcast("u1", {"type": "item_new"})
+
+    asyncio.get_event_loop().run_until_complete(_run())
+
+    # Dead device removed → offline.
+    assert not hub.is_online("u1", "d_dead")
+    # Offline transition broadcast (device_changed) reached the live device.
+    assert {"type": "device_changed"} in events_on_live
+
+
+def test_broadcast_dead_socket_with_surviving_sibling_no_offline_transition():
+    """If the dead socket's device has another live socket, no offline transition fires."""
+    hub = Hub()
+    dead = DeadSocket()
+    live_sibling = FakeSocket()
+    hub.add("u1", "d1", dead)
+    hub.add("u1", "d1", live_sibling)  # same device — sibling survives
+
+    observer = FakeSocket()
+    observer_events: list = []
+
+    async def _obs_send(e):  # type: ignore[override]
+        observer_events.append(e)
+
+    observer.send_json = _obs_send  # type: ignore[method-assign]
+    hub.add("u1", "d2", observer)
+
+    async def _run():
+        await hub.broadcast("u1", {"type": "item_new"})
+
+    asyncio.get_event_loop().run_until_complete(_run())
+
+    # d1 still online (sibling alive).
+    assert hub.is_online("u1", "d1")
+    # No device_changed broadcast — only item_new.
+    assert all(e == {"type": "item_new"} for e in observer_events)
