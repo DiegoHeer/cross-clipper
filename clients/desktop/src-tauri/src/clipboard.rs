@@ -46,8 +46,8 @@ impl ClipboardReader for WindowsClipboard {
     fn read(&self) -> ClipboardRead {
         use windows::Win32::Foundation::HANDLE;
         use windows::Win32::System::DataExchange::{
-            CloseClipboard, GetClipboardData, IsClipboardFormatAvailable,
-            OpenClipboard, RegisterClipboardFormatW,
+            CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+            RegisterClipboardFormatW,
         };
         use windows::Win32::System::Memory::{GlobalLock, GlobalUnlock};
 
@@ -76,7 +76,8 @@ unsafe fn read_clipboard_inner() -> ClipboardRead {
     // 1. Check for the sensitive-content sentinel format first.
     //    Password managers and other security-aware apps register this format to
     //    signal that clipboard monitors should not read the content.
-    let sensitive_fmt = RegisterClipboardFormatW(w!("ExcludeClipboardContentFromMonitoringProcessing"));
+    let sensitive_fmt =
+        RegisterClipboardFormatW(w!("ExcludeClipboardContentFromMonitoringProcessing"));
     if sensitive_fmt != 0 && IsClipboardFormatAvailable(sensitive_fmt).is_ok() {
         return ClipboardRead::Sensitive;
     }
@@ -162,7 +163,10 @@ mod tests {
     #[test]
     fn empty_text_and_unsupported_are_distinct() {
         assert!(matches!(
-            FakeClipboard { r: || ClipboardRead::Empty }.read(),
+            FakeClipboard {
+                r: || ClipboardRead::Empty
+            }
+            .read(),
             ClipboardRead::Empty
         ));
         assert!(matches!(
