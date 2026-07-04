@@ -18,6 +18,9 @@ import { AsyncStorageAdapter } from "../platform/storage";
 import { rnSocketFactory } from "../platform/socket";
 import { SyncController } from "./SyncController";
 import type { SyncSnapshot } from "./SyncController";
+import { AlertManager } from "../alerts/AlertManager";
+import { expoNotificationSink } from "../alerts/notifications";
+import { loadPrefs } from "../settings/prefs";
 
 // ─── Context ─────────────────────────────────────────────────────────────────
 
@@ -46,13 +49,25 @@ export function SyncProvider({ children, controller: injected }: SyncProviderPro
   const ctrlRef = useRef<SyncController | null>(null);
 
   if (!ctrlRef.current) {
-    ctrlRef.current =
-      injected ??
-      new SyncController({
-        storage: new AsyncStorageAdapter(),
+    if (injected) {
+      ctrlRef.current = injected;
+    } else {
+      const storage = new AsyncStorageAdapter();
+      // Wire AlertManager as the alertSink so SyncController notifies on new items.
+      // AlertManager consumes items; it does not drive sync.
+      const alertSink = new AlertManager({
+        storage,
+        notifications: expoNotificationSink,
+        getPrefs: loadPrefs,
+        getSelfDeviceId: async () => ctrlRef.current?.snapshot().selfDeviceId ?? null,
+      });
+      ctrlRef.current = new SyncController({
+        storage,
         socketFactory: rnSocketFactory,
         appState: AppState,
+        alertSink,
       });
+    }
   }
   const ctrl = ctrlRef.current;
 
