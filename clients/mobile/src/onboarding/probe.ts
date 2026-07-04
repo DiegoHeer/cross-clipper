@@ -2,6 +2,11 @@
  * probeServer — contacts a CrossClipper server's /health endpoint and
  * classifies the response. Mirrors extension popup/onboarding/probe.ts.
  */
+import { ApiClient, ApiError, NetworkError } from "@crossclipper/core";
+import { CLIENT_VERSION } from "../sync/SyncController";
+
+/** Oldest server this client can talk to ("client requires newer server"). */
+export const MIN_SERVER_VERSION = "0.1.0";
 
 export interface ProbeOk {
   ok: true;
@@ -15,6 +20,20 @@ export interface ProbeError {
 }
 
 export type ProbeResult = ProbeOk | ProbeError;
+
+// ─── semverGte ───────────────────────────────────────────────────────────────
+
+/** Returns true if semver a >= b (major.minor.patch, numeric comparison). */
+export function semverGte(a: string, b: string): boolean {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const da = pa[i] ?? 0;
+    const db = pb[i] ?? 0;
+    if (da !== db) return da > db;
+  }
+  return true;
+}
 
 // ─── normalizeServerUrl ──────────────────────────────────────────────────────
 
@@ -53,44 +72,31 @@ export function isInsecureHttp(url: string): boolean {
 
 // ─── probeServer ─────────────────────────────────────────────────────────────
 
-interface HealthResponse {
-  status?: string;
-  version?: string;
-  registration_open?: boolean;
-}
-
 /**
- * Probe a CrossClipper server at `baseUrl/health`.
+ * Probe a CrossClipper server at `baseUrl/health` via ApiClient.
  *
  * Returns:
- *   { ok: true, version, registrationOpen }   — healthy CrossClipper server
- *   { ok: false, reason: "unreachable" }       — network error or non-2xx
- *   { ok: false, reason: "unhealthy" }         — status field present but ≠ "ok"
- *   { ok: false, reason: "not_crossclipper" }  — no recognisable status field
+ *   { ok: true, version, registrationOpen }        — healthy CrossClipper server
+ *   { ok: false, reason: "unreachable" }            — network error
+ *   { ok: false, reason: "unhealthy" }              — 503 / server degraded
+ *   { ok: false, reason: "not_crossclipper" }       — health.app ≠ "crossclipper"
+ *   { ok: false, reason: "server_too_old" }         — version < MIN_SERVER_VERSION
  */
-export async function probeServer(baseUrl: string): Promise<ProbeResult> {
-  let resp: Response;
+export async function probeServer(
+  baseUrl: string,
+  fetchFn?: typeof fetch,
+): Promise<ProbeResult> {
+  const client = new ApiClient({ baseUrl, clientVersion: CLIENT_VERSION, fetchFn });
   try {
-    resp = await fetch(`${baseUrl}/health`);
-  } catch {
-    return { ok: false, reason: "unreachable" };
-  }
-
-  if (!resp.ok) return { ok: false, reason: "unreachable" };
-
-  let body: HealthResponse;
-  try {
-    body = (await resp.json()) as HealthResponse;
-  } catch {
+    const health = await client.health();
+    if (health.app !== "crossclipper") return { ok: false, reason: "not_crossclipper" };
+    if (!semverGte(health.version, MIN_SERVER_VERSION)) {
+      return { ok: false, reason: "server_too_old" };
+    }
+    return { ok: true, version: health.version, registrationOpen: health.registration_open };
+  } catch (err) {
+    if (err instanceof NetworkError) return { ok: false, reason: "unreachable" };
+    if (err instanceof ApiError && err.status === 503) return { ok: false, reason: "unhealthy" };
     return { ok: false, reason: "not_crossclipper" };
   }
-
-  if (typeof body.status === "undefined") return { ok: false, reason: "not_crossclipper" };
-  if (body.status !== "ok") return { ok: false, reason: "unhealthy" };
-
-  return {
-    ok: true,
-    version: body.version ?? "unknown",
-    registrationOpen: body.registration_open ?? false,
-  };
 }

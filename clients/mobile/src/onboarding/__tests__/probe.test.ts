@@ -1,12 +1,16 @@
 /**
- * Tests for probeServer() — TDD step 1 (Task 10).
+ * Tests for probeServer() — TDD step 1 (Task 10) + review fixes (finding 3).
+ *
+ * probeServer() now accepts an injectable fetchFn so tests stay pure and don't
+ * rely on globalThis.fetch spying.
  */
-import { probeServer, isInsecureHttp, normalizeServerUrl } from "../probe";
+import { probeServer, isInsecureHttp, normalizeServerUrl, semverGte, MIN_SERVER_VERSION } from "../probe";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-function mockFetch(status: number, body: unknown): jest.SpyInstance {
-  return jest.spyOn(globalThis, "fetch").mockResolvedValue({
+/** Build a jest mock fetchFn that returns the given status + JSON body. */
+function makeFetchFn(status: number, body: unknown): jest.Mock {
+  return jest.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
     status,
     json: () => Promise.resolve(body),
@@ -14,7 +18,10 @@ function mockFetch(status: number, body: unknown): jest.SpyInstance {
   } as unknown as Response);
 }
 
-afterEach(() => jest.restoreAllMocks());
+/** Build a jest mock fetchFn that rejects with a network error. */
+function makeNetworkErrorFn(): jest.Mock {
+  return jest.fn().mockRejectedValue(new Error("Network request failed"));
+}
 
 // ─── normalizeServerUrl ──────────────────────────────────────────────────────
 
@@ -63,61 +70,115 @@ describe("isInsecureHttp", () => {
   });
 });
 
+// ─── semverGte ───────────────────────────────────────────────────────────────
+
+describe("semverGte", () => {
+  it("returns true when versions are equal", () => {
+    expect(semverGte("0.1.0", "0.1.0")).toBe(true);
+  });
+
+  it("returns true when a is newer (patch)", () => {
+    expect(semverGte("0.1.1", "0.1.0")).toBe(true);
+  });
+
+  it("returns true when a is newer (minor)", () => {
+    expect(semverGte("0.2.0", "0.1.0")).toBe(true);
+  });
+
+  it("returns false when a is older (patch)", () => {
+    expect(semverGte("0.0.9", "0.1.0")).toBe(false);
+  });
+});
+
 // ─── probeServer ─────────────────────────────────────────────────────────────
 
 describe("probeServer", () => {
+  const URL = "https://clip.example.com";
+
   it("classifies a healthy CrossClipper server as ok", async () => {
-    mockFetch(200, {
+    const fetchFn = makeFetchFn(200, {
+      app: "crossclipper",
       status: "ok",
       version: "0.1.0",
       registration_open: false,
     });
-    const result = await probeServer("https://clip.example.com");
+    const result = await probeServer(URL, fetchFn);
     expect(result).toEqual({ ok: true, version: "0.1.0", registrationOpen: false });
   });
 
   it("classifies a server with registration_open:true", async () => {
-    mockFetch(200, {
+    const fetchFn = makeFetchFn(200, {
+      app: "crossclipper",
       status: "ok",
       version: "0.2.0",
       registration_open: true,
     });
-    const result = await probeServer("https://clip.example.com");
+    const result = await probeServer(URL, fetchFn);
     expect(result).toEqual({ ok: true, version: "0.2.0", registrationOpen: true });
   });
 
+  it("returns not_crossclipper when app field is not 'crossclipper' (foreign server returning ok status)", async () => {
+    // A foreign server that happens to return {status:"ok"} must NOT pass
+    const fetchFn = makeFetchFn(200, {
+      app: "someotherapp",
+      status: "ok",
+      version: "1.0.0",
+      registration_open: false,
+    });
+    const result = await probeServer(URL, fetchFn);
+    expect(result).toEqual({ ok: false, reason: "not_crossclipper" });
+  });
+
+  it("returns server_too_old when version is below MIN_SERVER_VERSION", async () => {
+    // MIN_SERVER_VERSION is "0.1.0"; a server reporting "0.0.9" is too old
+    const fetchFn = makeFetchFn(200, {
+      app: "crossclipper",
+      status: "ok",
+      version: "0.0.9",
+      registration_open: false,
+    });
+    const result = await probeServer(URL, fetchFn);
+    expect(result).toEqual({ ok: false, reason: "server_too_old" });
+  });
+
+  it("MIN_SERVER_VERSION itself is accepted (boundary)", async () => {
+    const fetchFn = makeFetchFn(200, {
+      app: "crossclipper",
+      status: "ok",
+      version: MIN_SERVER_VERSION,
+      registration_open: false,
+    });
+    const result = await probeServer(URL, fetchFn);
+    expect(result).toEqual({ ok: true, version: MIN_SERVER_VERSION, registrationOpen: false });
+  });
+
   it("returns not_crossclipper for non-JSON response", async () => {
-    jest.spyOn(globalThis, "fetch").mockResolvedValue({
+    const fetchFn = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.reject(new Error("not json")),
       text: () => Promise.resolve("<html>not json</html>"),
     } as unknown as Response);
-    const result = await probeServer("https://clip.example.com");
+    const result = await probeServer(URL, fetchFn);
     expect(result).toEqual({ ok: false, reason: "not_crossclipper" });
   });
 
-  it("returns not_crossclipper when status field is absent", async () => {
-    mockFetch(200, { version: "0.1.0" });
-    const result = await probeServer("https://clip.example.com");
-    expect(result).toEqual({ ok: false, reason: "not_crossclipper" });
-  });
-
-  it("returns unhealthy when status is not 'ok'", async () => {
-    mockFetch(200, { status: "degraded", version: "0.1.0" });
-    const result = await probeServer("https://clip.example.com");
+  it("returns unhealthy for 503 status", async () => {
+    const fetchFn = makeFetchFn(503, { detail: "Service Unavailable" });
+    const result = await probeServer(URL, fetchFn);
     expect(result).toEqual({ ok: false, reason: "unhealthy" });
   });
 
   it("returns unreachable when fetch throws (network error)", async () => {
-    jest.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network request failed"));
-    const result = await probeServer("https://clip.example.com");
+    const fetchFn = makeNetworkErrorFn();
+    const result = await probeServer(URL, fetchFn);
     expect(result).toEqual({ ok: false, reason: "unreachable" });
   });
 
-  it("returns unreachable for non-2xx status", async () => {
-    mockFetch(503, {});
-    const result = await probeServer("https://clip.example.com");
-    expect(result).toEqual({ ok: false, reason: "unreachable" });
+  it("returns not_crossclipper for non-2xx non-503 status (server reachable but wrong endpoint)", async () => {
+    // ApiClient throws ApiError for non-503 non-2xx; extension probe maps this to not_crossclipper
+    const fetchFn = makeFetchFn(404, {});
+    const result = await probeServer(URL, fetchFn);
+    expect(result).toEqual({ ok: false, reason: "not_crossclipper" });
   });
 });
