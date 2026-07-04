@@ -21,5 +21,11 @@ clients/extension/dist/
 clients/extension/dist-firefox/
 clients/extension/e2e-results/
 
+# Mobile build outputs
+clients/mobile/ios/
+clients/mobile/android/
+clients/mobile/.expo/
+clients/mobile/dist/
+
 # Subagent scratch reports (worktree root)
 .superpowers-*.md
