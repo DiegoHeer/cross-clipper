@@ -26,7 +26,7 @@ describe("accent derivation", () => {
     expect(hexToRgb("nonsense")).toBeNull();
   });
   it("default amber gets white foreground; light accents get dark foreground", () => {
-    expect(accentForeground("#d97706")).toBe("#ffffff");
+    expect(accentForeground("#d97706")).toBe("#1c1917");
     expect(accentForeground("#fde047")).toBe("#1c1917"); // light yellow
   });
   it("soft accent is a translucent tint of the accent", () => {

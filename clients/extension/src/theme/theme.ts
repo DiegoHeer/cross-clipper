@@ -31,7 +31,9 @@ export function accentForeground(hex: string): string {
     return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
   }) as [number, number, number];
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return lum > 0.5 ? "#1c1917" : "#ffffff";
+  // 0.179 is the luminance where white and black text give equal WCAG contrast;
+  // above it, dark text always wins (e.g. the default amber: 6.6:1 vs 3.2:1).
+  return lum > 0.179 ? "#1c1917" : "#ffffff";
 }
 
 export function accentSoft(hex: string, alpha = 0.14): string {
