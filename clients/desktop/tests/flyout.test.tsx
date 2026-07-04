@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Item } from "@crossclipper/core";
 import { __resetEvents, emit } from "./tauriMock";
 import * as clipboardPlugin from "@tauri-apps/plugin-clipboard-manager";
+import * as openerPlugin from "@tauri-apps/plugin-opener";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -90,5 +91,14 @@ describe("Flyout", () => {
     await userEvent.click(screen.getByRole("button", { name: /copy/i }));
     expect(writeSpy).toHaveBeenCalledWith("body 01A");
     writeSpy.mockRestore();
+  });
+
+  it("open action on a link item routes through the opener plugin", async () => {
+    const openSpy = vi.spyOn(openerPlugin, "openUrl");
+    const linkItem = item("02A", { kind: "link", body: "https://example.com" });
+    await renderFlyout(liveSnapshot({ items: [linkItem] }));
+    await userEvent.click(screen.getByRole("button", { name: /open/i }));
+    expect(openSpy).toHaveBeenCalledWith("https://example.com");
+    openSpy.mockRestore();
   });
 });
