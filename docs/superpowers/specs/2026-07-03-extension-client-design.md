@@ -93,7 +93,7 @@ Defined once in `src/theme/` as CSS custom properties; the token *names* are the
 
 - **Neutrals (slate):** `--bg`, `--surface`, `--surface-raised`, `--border`, `--text`, `--text-muted` — each with light and dark values, switched by `prefers-color-scheme` with a manual override class.
 - **Accent (user setting):** `--accent`, `--accent-fg`, `--accent-soft` (tinted background), derived at runtime from the user's chosen color (default amber `#d97706`). Stored in `chrome.storage.local`; applied before first paint to avoid flash. *Amended 2026-07-04:* `--accent-fg` is picked at the WCAG equal-contrast crossover (relative luminance 0.179) — whichever of dark/white text yields the higher contrast ratio. On the default amber this means dark text (6.6:1); white-on-amber was considered and rejected (3.2:1, fails AA for button-size text). Decision confirmed by Diego; applies to all clients deriving `--accent-fg`.
-- **Semantic:** `--success` (presence, health), `--danger` (revoke, delete), radii and spacing scale.
+- **Semantic:** `--success` (presence, health), `--danger` (revoke, delete), radii and spacing scale. *Amended 2026-07-04:* the radius scale is part of the contract: `--radius-sm: 6px` (chips, small controls), `--radius-md: 10px` (buttons, inputs), `--radius-lg: 16px` (cards, sheets — added when the mobile client's card surfaces needed it; all clients define the full scale even where a step is not yet used).
 
 Extraction into a shared `packages/ui` happens when the second web-technology client (desktop) needs the tokens — not before (YAGNI); the extension keeps them structured for that lift.
 
