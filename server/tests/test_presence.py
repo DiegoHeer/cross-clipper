@@ -170,7 +170,7 @@ def test_broadcast_prunes_dead_socket_live_receives():
     async def _run():
         await hub.broadcast("u1", {"type": "item_new"})
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())
 
     # Live socket received the original event.
     assert {"type": "item_new"} in received
@@ -205,7 +205,7 @@ def test_broadcast_dead_socket_last_triggers_offline_transition():
     async def _run():
         await hub.broadcast("u1", {"type": "item_new"})
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())
 
     # Dead device removed → offline.
     assert not hub.is_online("u1", "d_dead")
@@ -233,7 +233,7 @@ def test_broadcast_dead_socket_with_surviving_sibling_no_offline_transition():
     async def _run():
         await hub.broadcast("u1", {"type": "item_new"})
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())
 
     # d1 still online (sibling alive).
     assert hub.is_online("u1", "d1")
