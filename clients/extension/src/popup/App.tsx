@@ -45,7 +45,7 @@ export default function App() {
           ))}
         </div>
       </div>
-      <Compose devices={devices.filter((d) => d.isSelf)} onSend={() => {}} />
+      <Compose devices={devices} onSend={() => {}} />
     </div>
   );
 }
