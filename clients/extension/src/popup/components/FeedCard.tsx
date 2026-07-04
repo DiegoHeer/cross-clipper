@@ -93,7 +93,7 @@ export function FeedCard({
             onClick={() => onRetry?.(item.id)}
             style={{
               background: "var(--danger)",
-              color: "#fff",
+              color: "var(--accent-fg)",
               border: "none",
               borderRadius: "var(--radius-sm)",
               padding: "var(--space-1) var(--space-2)",
@@ -103,55 +103,58 @@ export function FeedCard({
             Not sent — tap to retry
           </button>
         </div>
-      ) : sendState === "pending" ? (
-        <div className="card-actions">
-          <span style={{ color: "var(--text-muted)", fontSize: "0.8em" }}>Sending…</span>
-        </div>
       ) : (
-        <div className="card-actions" style={{ display: "flex", gap: "var(--space-2)" }}>
-          <button
-            onClick={handleCopy}
-            style={{
-              background: "var(--accent)",
-              color: "var(--accent-fg)",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              padding: "var(--space-1) var(--space-2)",
-              cursor: "pointer",
-            }}
-          >
-            {copied ? "Copied ✓" : "Copy"}
-          </button>
-
-          {item.kind === "link" && (
+        <>
+          <div className="card-actions" style={{ display: "flex", gap: "var(--space-2)" }}>
             <button
-              onClick={() => onOpen(item.body)}
+              onClick={handleCopy}
               style={{
-                background: "var(--surface-raised)",
-                border: "1px solid var(--border)",
+                background: "var(--accent)",
+                color: "var(--accent-fg)",
+                border: "none",
                 borderRadius: "var(--radius-sm)",
                 padding: "var(--space-1) var(--space-2)",
                 cursor: "pointer",
               }}
             >
-              Open
+              {copied ? "Copied ✓" : "Copy"}
             </button>
-          )}
 
-          <button
-            onClick={() => onDelete(item.id)}
-            style={{
-              marginLeft: "auto",
-              background: "transparent",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              padding: "var(--space-1)",
-            }}
-          >
-            Delete
-          </button>
-        </div>
+            {item.kind === "link" && (
+              <button
+                onClick={() => onOpen(item.body)}
+                style={{
+                  background: "var(--surface-raised)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "var(--space-1) var(--space-2)",
+                  cursor: "pointer",
+                }}
+              >
+                Open
+              </button>
+            )}
+
+            <button
+              onClick={() => onDelete(item.id)}
+              disabled={sendState === "pending"}
+              style={{
+                marginLeft: "auto",
+                background: "transparent",
+                border: "none",
+                color: "var(--text-muted)",
+                cursor: sendState === "pending" ? "not-allowed" : "pointer",
+                padding: "var(--space-1)",
+              }}
+            >
+              Delete
+            </button>
+          </div>
+
+          {sendState === "pending" && (
+            <span style={{ color: "var(--text-muted)", fontSize: "0.8em" }}>sending…</span>
+          )}
+        </>
       )}
     </article>
   );

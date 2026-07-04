@@ -62,6 +62,13 @@ describe("FeedCard", () => {
     expect(screen.queryByRole("button", { name: /copy/i })).not.toBeInTheDocument();
   });
 
+  it("pending sends keep Copy enabled, disable Delete, and show sending indicator", () => {
+    render(<FeedCard {...base} entry={{ item: item({}), sendState: "pending" }} />);
+    expect(screen.getByRole("button", { name: /copy/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /delete/i })).toBeDisabled();
+    expect(screen.getByText(/sending…/i)).toBeInTheDocument();
+  });
+
   it("shows origin device and relative time in the header", () => {
     render(<FeedCard {...base} entry={{ item: item({}) }} />);
     expect(screen.getByText(/Pixel 8/)).toBeInTheDocument();
