@@ -269,6 +269,7 @@
             "type": "string"
           },
           "email": {
+            "format": "email",
             "title": "Email",
             "type": "string"
           },
@@ -321,8 +322,7 @@
       "RegisterIn": {
         "properties": {
           "email": {
-            "maxLength": 255,
-            "minLength": 3,
+            "format": "email",
             "title": "Email",
             "type": "string"
           },

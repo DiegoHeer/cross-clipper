@@ -1,6 +1,6 @@
 from enum import Enum
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 _BCRYPT_MAX_BYTES = 72
 
@@ -26,7 +26,7 @@ class Platform(str, Enum):
 
 
 class RegisterIn(BaseModel):
-    email: str = Field(min_length=3, max_length=255)
+    email: EmailStr
     # max_length=72 matches the bcrypt byte limit for ASCII passwords; the byte
     # validator below additionally rejects multibyte passwords that exceed 72 bytes.
     password: str = Field(min_length=8, max_length=72)
@@ -42,7 +42,7 @@ class RegisterOut(BaseModel):
 
 
 class LoginIn(BaseModel):
-    email: str
+    email: EmailStr
     # No max_length on login password to avoid leaking schema info, but the byte
     # validator still rejects over-long passwords before they reach bcrypt.
     password: str

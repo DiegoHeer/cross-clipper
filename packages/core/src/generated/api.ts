@@ -243,7 +243,10 @@ export interface components {
         LoginIn: {
             /** Device Name */
             device_name: string;
-            /** Email */
+            /**
+             * Email
+             * Format: email
+             */
             email: string;
             /** Password */
             password: string;
@@ -263,7 +266,10 @@ export interface components {
         Platform: "ios" | "android" | "windows" | "extension" | "other";
         /** RegisterIn */
         RegisterIn: {
-            /** Email */
+            /**
+             * Email
+             * Format: email
+             */
             email: string;
             /** Password */
             password: string;
