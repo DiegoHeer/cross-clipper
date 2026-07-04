@@ -52,6 +52,23 @@ describe("applyAppearance", () => {
   });
 });
 
+describe("tokens.css radius scale", () => {
+  // Extension spec §7 mandates the full sm/md/lg radius scale so that all
+  // clients share the same token contract, even where a value is unused.
+  it("defines the full sm/md/lg radius scale", () => {
+    const css = readFileSync(
+      join(import.meta.dirname, "../src/theme/tokens.css"),
+      "utf8",
+    );
+    const rootBlock = css.match(/:root\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(rootBlock).toContain("--radius-sm:");
+    expect(rootBlock).toContain("--radius-md:");
+    expect(rootBlock).toContain("--radius-lg:");
+    const lg = rootBlock.match(/--radius-lg\s*:\s*([^;]+);/)?.[1]?.trim();
+    expect(lg).toBe("16px");
+  });
+});
+
 describe("tokens.css static defaults", () => {
   // The pre-paint fallback for --accent-fg must match what the runtime
   // derivation function returns for the default amber (#d97706).
@@ -65,7 +82,7 @@ describe("tokens.css static defaults", () => {
     // Extract the :root block (first occurrence) and find --accent-fg
     const rootBlock = css.match(/:root\s*\{([^}]*)\}/)?.[1] ?? "";
     const match = rootBlock.match(/--accent-fg\s*:\s*([^;]+);/);
-    const staticDefault = match?.[1].trim();
+    const staticDefault = match?.[1]?.trim();
     const runtimeDefault = accentForeground(DEFAULT_APPEARANCE.accent);
     expect(staticDefault).toBe(runtimeDefault);
   });
