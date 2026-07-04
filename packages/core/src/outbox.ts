@@ -2,7 +2,7 @@ import { ulid } from "ulidx";
 
 import { ApiError, NetworkError, type ApiClient } from "./api/client";
 import type { SyncStorage } from "./storage";
-import type { Item, ItemKind } from "./types";
+import type { Item } from "./types";
 
 const OUTBOX_KEY = "cc.outbox";
 
@@ -76,7 +76,7 @@ export class Outbox {
    */
   async enqueue(entry: {
     id: string;
-    kind: ItemKind;
+    kind: "text" | "link";
     body: string;
     targetDeviceId?: string | null;
   }): Promise<void> {
