@@ -1,0 +1,259 @@
+/* CrossClipper desktop shared UI stylesheet.
+   Adapted from the extension's popup.css — token-driven, reused across
+   flyout, full-window, and toast surfaces. The full window is roomier
+   but shares card/rail/chip/compose class names verbatim. */
+
+html,
+body,
+#root {
+  margin: 0;
+  font-family: var(--font-ui);
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* ── Layout shells ─────────────────────────────────────────────────── */
+
+.app {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.header button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.banner {
+  padding: var(--space-1) var(--space-3);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+}
+
+/* ── Device rail ───────────────────────────────────────────────────── */
+
+.main {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  min-height: 0;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.rail button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+}
+
+.rail button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.rail-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+/* ── Presence dots ─────────────────────────────────────────────────── */
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-online {
+  background: var(--success);
+}
+
+.dot-offline {
+  background: var(--border);
+}
+
+/* ── Feed ──────────────────────────────────────────────────────────── */
+
+.feed {
+  overflow-y: auto;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: var(--space-1);
+}
+
+.card-body {
+  margin: 0 0 var(--space-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.card-body a {
+  color: var(--accent);
+}
+
+.card-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.card-actions button,
+.card-retry,
+.chip,
+.compose-row button {
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.card-actions button.danger,
+.card-retry {
+  color: var(--danger);
+}
+
+.card-new {
+  outline: 2px solid var(--accent-soft);
+}
+
+.card-pending {
+  font-size: 11px;
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* ── Target chips ──────────────────────────────────────────────────── */
+
+.chips {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-1);
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+/* ── Compose ───────────────────────────────────────────────────────── */
+
+.compose {
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.compose-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+/* ── Drop zone (desktop only — media phase placeholder) ────────────── */
+
+.dropzone {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.8em;
+  text-align: center;
+  padding: var(--space-2);
+  user-select: none;
+}
+
+.dropzone[aria-disabled="true"] {
+  opacity: 0.6;
+}
+
+/* ── Toast surface ─────────────────────────────────────────────────── */
+
+.toast-surface {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  min-width: 280px;
+  max-width: 400px;
+}
+
+.toast-surface button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.toast-countdown {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  min-width: 2ch;
+}

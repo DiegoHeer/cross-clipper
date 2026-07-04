@@ -172,6 +172,15 @@ fn show_main(app: AppHandle) {
     tray::show_main(&app);
 }
 
+/// Show a window by label (called from the webview — e.g. the toast window).
+#[tauri::command]
+fn show_window(app: AppHandle, label: String) {
+    if let Some(win) = app.get_webview_window(&label) {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
 /// Hide a window by label (called from the webview).
 #[tauri::command]
 fn hide_window(app: AppHandle, label: String) {
@@ -233,6 +242,7 @@ pub fn run() {
             set_capture_enabled,
             show_flyout,
             show_main,
+            show_window,
             hide_window,
         ])
         .run(tauri::generate_context!())
@@ -252,6 +262,7 @@ pub fn run() {
             pause_capture,
             show_flyout,
             show_main,
+            show_window,
             hide_window,
         ])
         .run(tauri::generate_context!())
