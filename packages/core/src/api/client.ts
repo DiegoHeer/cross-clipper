@@ -28,7 +28,10 @@ export class ApiClient {
 
   constructor(private readonly opts: ApiClientOptions) {
     this.token = opts.token;
-    this.fetchFn = opts.fetchFn ?? fetch;
+    // Bind to globalThis so that storing the reference in an object property
+    // does not lose the receiver — Chrome extension contexts throw
+    // "Illegal invocation" if fetch is called without its Window receiver.
+    this.fetchFn = opts.fetchFn ?? fetch.bind(globalThis);
   }
 
   setToken(token: string): void {
