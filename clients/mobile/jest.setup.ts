@@ -28,3 +28,5 @@ jest.mock("expo-device", () => ({
   modelName: "Test Device",
   isDevice: false,
 }));
+
+jest.mock("expo-share-extension", () => ({ close: jest.fn() }), { virtual: true });

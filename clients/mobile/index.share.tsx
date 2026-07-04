@@ -16,12 +16,18 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
 import { registerRootComponent } from "expo";
+import { close as closeShareExtension } from "expo-share-extension";
 import { ShareSheet } from "./src/share/ShareSheet";
 import { sendDirect } from "./src/share/sendDirect";
 import { appGroup } from "./src/platform/appGroup";
 import { ThemeProvider, useTheme } from "./src/theme/ThemeProvider";
 import type { AuthBundle } from "./src/platform/appGroup";
 import type { Device } from "@crossclipper/core";
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+/** Delay between "Sent ✓" feedback and native close() call (ms). */
+export const DISMISS_DELAY_MS = 1200;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -102,8 +108,8 @@ function ShareRoot(): React.JSX.Element {
       selfDeviceId={auth.deviceId}
       lastUsedDeviceId={lastUsedDeviceId}
       onSent={() => {
-        // expo-share-extension dismisses via its native close() bridge.
-        // The implementation calls this after the "Sent ✓" feedback delay.
+        // Show "Sent ✓" feedback for DISMISS_DELAY_MS, then dismiss the extension.
+        setTimeout(() => closeShareExtension(), DISMISS_DELAY_MS);
       }}
       onError={(msg) => {
         setRetryMsg(msg);

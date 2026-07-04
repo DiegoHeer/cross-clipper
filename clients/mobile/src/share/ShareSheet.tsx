@@ -238,7 +238,7 @@ function styles(tokens: ReturnType<typeof useTheme>) {
       textAlign: "center",
     },
     broadcastLabel: {
-      color: tokens.text,
+      color: tokens.accentFg,
       fontWeight: "600",
     },
     sentContainer: {

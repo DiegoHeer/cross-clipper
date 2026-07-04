@@ -64,6 +64,39 @@ describe("ShareSheet (A2 tile row)", () => {
       );
     });
 
+    it("broadcast tile label uses accentFg color (not tokens.text)", () => {
+      const { getByText } = render(
+        <Wrapper>
+          <ShareSheet
+            shared={shared}
+            devices={DEVICES}
+            selfDeviceId={SELF_ID}
+            onSent={jest.fn()}
+            onError={jest.fn()}
+            sendFn={jest.fn()}
+          />
+        </Wrapper>,
+      );
+      const label = getByText("Everyone");
+      // The label has style={[s.tileLabel, s.broadcastLabel]}. Flatten the array to
+      // get the effective styles (later entries win).
+      const rawStyle = label.props.style as
+        | Array<{ color?: string } | null | undefined>
+        | { color?: string }
+        | null
+        | undefined;
+      const stylesArr = Array.isArray(rawStyle) ? rawStyle : [rawStyle];
+      // Merge left-to-right; later entries override earlier ones.
+      const merged = Object.assign({}, ...stylesArr.filter(Boolean)) as { color?: string };
+      const color = merged.color;
+      // tokens.text (default light) = "#0f172a" (slate-900)
+      // tokens.accentFg (default amber #d97706, lum 0.267 > 0.179) = "#1c1917"
+      // The assertion: color must NOT be the slate-900 text default
+      expect(color).not.toBe("#0f172a");
+      // And it must actually be accentFg
+      expect(color).toBe("#1c1917");
+    });
+
     it("excludes self device from tiles", () => {
       const { queryByRole } = render(
         <Wrapper>
