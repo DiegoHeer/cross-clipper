@@ -1,3 +1,5 @@
+pub mod clipboard;
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
