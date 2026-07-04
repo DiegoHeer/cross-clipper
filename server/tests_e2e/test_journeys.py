@@ -241,6 +241,29 @@ async def _recv_json(
     return json.loads(raw)
 
 
+async def _recv_pong(
+    ws: websockets.ClientConnection,
+    label: str = "ws",
+    timeout: float = _WS_RECV_TIMEOUT,
+) -> None:
+    """Send a ping then drain frames until a pong arrives.
+
+    Non-pong frames (e.g. ``device_changed`` presence broadcasts that arrive
+    because a peer socket just connected) are silently skipped.  Raises
+    ``AssertionError`` if the deadline expires without a pong.
+    """
+    await ws.send(json.dumps({"type": "ping"}))
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            break
+        msg = await asyncio.wait_for(ws.recv(), timeout=remaining)
+        if json.loads(msg).get("type") == "pong":
+            return
+    raise AssertionError(f"{label}: did not receive pong within {timeout}s")
+
+
 @pytest.mark.e2e
 def test_journey_live_events(server: ServerInfo) -> None:
     """
@@ -404,13 +427,10 @@ def test_journey_revocation_ws(server: ServerInfo) -> None:
         ):
             # Guard: confirm both handler loops are running before triggering revocation.
             # A pong proves hub.add completed, so broadcasts and close-kicks are reliable.
-            await ws_a.send(json.dumps({"type": "ping"}))
-            pong = await _recv_json(ws_a)
-            assert pong == {"type": "pong"}, f"expected pong, got {pong!r}"
-
-            await ws_b.send(json.dumps({"type": "ping"}))
-            pong_b = await _recv_json(ws_b)
-            assert pong_b == {"type": "pong"}, f"expected pong for B, got {pong_b!r}"
+            # Use _recv_pong so that presence broadcasts (device_changed) arriving from
+            # a peer's concurrent connect are drained rather than mistaken for a pong.
+            await _recv_pong(ws_a, label="ws_a")
+            await _recv_pong(ws_b, label="ws_b")
 
             # Revoke device B (from A via HTTP) — run in a thread to avoid blocking the loop
             def _revoke() -> httpx.Response:
@@ -443,23 +463,8 @@ def test_journey_revocation_ws(server: ServerInfo) -> None:
                 )
 
             # A's connection is still alive — ping → pong
-            # Drain any pending broadcast events (e.g. device_changed) before sending ping
-            await ws_a.send(json.dumps({"type": "ping"}))
-            # Collect messages until we see a pong (skip intermediate broadcasts)
-            deadline = asyncio.get_running_loop().time() + _WS_RECV_TIMEOUT
-            pong2 = None
-            while asyncio.get_running_loop().time() < deadline:
-                remaining = deadline - asyncio.get_running_loop().time()
-                if remaining <= 0:
-                    break
-                msg = await asyncio.wait_for(ws_a.recv(), timeout=remaining)
-                parsed = json.loads(msg)
-                if parsed.get("type") == "pong":
-                    pong2 = parsed
-                    break
-            assert pong2 == {"type": "pong"}, (
-                f"A's WS broken after B revocation: expected pong, got {pong2!r}"
-            )
+            # _recv_pong drains any interim broadcasts (e.g. device_changed).
+            await _recv_pong(ws_a, label="ws_a post-revocation")
 
     asyncio.run(_run())
 
