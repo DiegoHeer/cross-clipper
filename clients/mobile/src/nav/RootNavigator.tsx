@@ -119,11 +119,21 @@ function TabsWithIntentWatcher(): React.JSX.Element {
   const handledRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!shared) return;
+    if (!shared) {
+      // Intent cleared (reset() was called): allow the same body to be handled
+      // again if the OS delivers a genuinely new intent later.
+      handledRef.current = null;
+      return;
+    }
 
-    // Stable key: body + kind. Reset if the same payload was already handled.
+    // Stable key: body + kind. Deduplicate re-renders on the same live intent.
     const key = `${shared.kind}:${shared.body}`;
-    if (handledRef.current === key) return;
+    if (handledRef.current === key) {
+      // Belt-and-suspenders: the library's intent is still pending even though
+      // we already handled it. Reset so it doesn't strand in the pending state.
+      reset();
+      return;
+    }
     handledRef.current = key;
 
     if (!authed) {
