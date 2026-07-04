@@ -47,6 +47,26 @@ const tauriNotifier: Notifier = {
 };
 
 // ---------------------------------------------------------------------------
+// Hotkey-conflict listener (exported for unit tests)
+// ---------------------------------------------------------------------------
+
+/**
+ * Register the cc:hotkey-conflict listener.
+ *
+ * Wires a notification for boot-time hotkey registration failures (decision 7).
+ * Exported so tests can drive it without bootstrapping the full app.
+ */
+export async function listenHotkeyConflict(notifier: Notifier): Promise<() => void> {
+  return listen<{ combo: string; role: string }>("cc:hotkey-conflict", ({ payload }) => {
+    void notifier.notify(
+      `hotkey-conflict-${payload.role}`,
+      "Capture hotkey unavailable",
+      "Capture hotkey unavailable — pick another in Settings → Capture",
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------------------
 async function main(): Promise<void> {
@@ -91,6 +111,9 @@ async function main(): Promise<void> {
       void controller.handleCapture(payload);
     },
   );
+
+  // Surface boot-time hotkey conflicts as a system notification (decision 7).
+  await listenHotkeyConflict(tauriNotifier);
 
   // Boot the sync engine
   await controller.wake();
