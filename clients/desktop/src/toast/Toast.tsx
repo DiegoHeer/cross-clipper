@@ -10,6 +10,12 @@ export interface ToastProps {
   toast: ToastState;
   /** Remaining milliseconds for the auto-dismiss countdown (synced only). */
   countdownMs: number;
+  /**
+   * Monotonic counter incremented on each new capture arrival.
+   * Included as a countdown-effect dep so a second synced capture always
+   * restarts the timer even when countdownMs hasn't changed.
+   */
+  captureId?: number;
   onUndo(outboxId: string): void;
   onDismiss(): void;
 }
@@ -29,7 +35,7 @@ export interface ToastProps {
  * Behaviour: dismiss (hide) immediately. A later toast_update "cancelled"
  * for an outboxId whose Undo was already clicked is a no-op hide (same path).
  */
-export function Toast({ toast, countdownMs, onUndo, onDismiss }: ToastProps) {
+export function Toast({ toast, countdownMs, captureId = 0, onUndo, onDismiss }: ToastProps) {
   const { state, snippet, outboxId } = toast;
 
   // Live countdown tick (seconds remaining).
@@ -57,7 +63,7 @@ export function Toast({ toast, countdownMs, onUndo, onDismiss }: ToastProps) {
 
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, countdownMs]);
+  }, [state, countdownMs, captureId]);
 
   // "cancelled" = undo confirmed; hide immediately.
   useEffect(() => {

@@ -219,6 +219,9 @@ body,
   text-align: center;
   padding: var(--space-2);
   user-select: none;
+}
+
+.dropzone[aria-disabled="true"] {
   opacity: 0.6;
 }
 
