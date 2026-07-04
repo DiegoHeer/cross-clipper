@@ -53,6 +53,21 @@ export interface AppGroup {
   writeAuth(bundle: AuthBundle): Promise<void>;
   clearAuth(): Promise<void>;
   pushToMainOutbox(entry: OutboxMirrorEntry): Promise<void>;
+  /**
+   * Read the outbox mirror WITHOUT clearing it.
+   * Use together with clearMainOutbox() for loss-proof drain:
+   *   1. peek  — read entries
+   *   2. enqueue each (per-entry try/catch, collect failures)
+   *   3. clearMainOutbox() — remove all
+   *   4. re-push failures back so the next wake retries them
+   */
+  peekMainOutbox(): Promise<OutboxMirrorEntry[]>;
+  /** Clear the outbox mirror. */
+  clearMainOutbox(): Promise<void>;
+  /**
+   * @deprecated Use peekMainOutbox() + clearMainOutbox() in SyncController for
+   * loss-proof drain. Retained for App Group tests that exercise the atomic path.
+   */
   drainMainOutbox(): Promise<OutboxMirrorEntry[]>;
 }
 
@@ -82,6 +97,16 @@ export function makeAppGroup(shim: AppGroupShim): AppGroup {
       const existing: OutboxMirrorEntry[] = raw ? (JSON.parse(raw) as OutboxMirrorEntry[]) : [];
       existing.push(entry);
       await shim.setItem(OUTBOX_KEY, JSON.stringify(existing));
+    },
+
+    async peekMainOutbox(): Promise<OutboxMirrorEntry[]> {
+      const raw = await shim.getItem(OUTBOX_KEY);
+      if (!raw) return [];
+      return JSON.parse(raw) as OutboxMirrorEntry[];
+    },
+
+    async clearMainOutbox(): Promise<void> {
+      await shim.removeItem(OUTBOX_KEY);
     },
 
     async drainMainOutbox(): Promise<OutboxMirrorEntry[]> {
