@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   mobile:
-    name: Mobile (typecheck + lint + test)
+    name: Mobile (typecheck + test)
     runs-on: ubuntu-latest
 
     steps:
