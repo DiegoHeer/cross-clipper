@@ -25,6 +25,7 @@ const AUTH_KEY = "cc.auth";
 const DEVICES_KEY = "cc.devices";
 const CURSOR_KEY = "cc.cursor";
 const OUTBOX_KEY = "cc.outbox";
+const PENDING_CANCELS_KEY = "cc.pendingCancels";
 
 interface AuthState {
   baseUrl: string;
@@ -65,11 +66,13 @@ export class BackgroundController {
 
   /**
    * Capture tracking for undo.
-   * outboxIdToItemId: populated when outbox delivers (acked) → use for undo.
+   * deliveredIds: outbox ids that have been acked by the server.
+   *   The server echoes the client-generated ULID as the item id (protocol
+   *   invariant), so outboxId === itemId and a Set is sufficient.
    * pendingCancelIds: outboxIds whose undo arrived before delivery; on
    *   delivery we immediately delete the server item.
    */
-  private outboxIdToItemId = new Map<string, string>();
+  private deliveredIds = new Set<string>();
   private pendingCancelIds = new Set<string>();
 
   constructor(private readonly deps: ControllerDeps) {
@@ -101,6 +104,24 @@ export class BackgroundController {
       this.waking = null;
     });
     return this.waking;
+  }
+
+  private async loadPendingCancels(): Promise<void> {
+    const raw = await this.deps.storage.get(PENDING_CANCELS_KEY);
+    if (!raw) return;
+    try {
+      const ids = JSON.parse(raw) as string[];
+      for (const id of ids) this.pendingCancelIds.add(id);
+    } catch {
+      // ignore corrupt data
+    }
+  }
+
+  private async savePendingCancels(): Promise<void> {
+    await this.deps.storage.set(
+      PENDING_CANCELS_KEY,
+      JSON.stringify([...this.pendingCancelIds]),
+    );
   }
 
   private async doWake(): Promise<void> {
@@ -135,6 +156,9 @@ export class BackgroundController {
       storage: this.deps.storage,
       onEvent: (e) => void this.onOutboxEvent(e),
     });
+    // Load persisted cancel intents BEFORE outbox can flush so that any in-flight
+    // entry from a previous session that delivers immediately after load is caught.
+    await this.loadPendingCancels();
     await this.outbox.load();
     await this.engine.start();
     void this.outbox.flush();
@@ -190,13 +214,14 @@ export class BackgroundController {
     if (e.type === "delivered") {
       const outboxId = e.item.id; // server echoes the client-generated ULID as item id
 
-      // Track the mapping for undo
-      this.outboxIdToItemId.set(outboxId, e.item.id);
+      // Track delivery for undo (outboxId === itemId — protocol invariant)
+      this.deliveredIds.add(outboxId);
 
       // If undo arrived before delivery (in-flight race), delete immediately
       if (this.pendingCancelIds.has(outboxId)) {
         this.pendingCancelIds.delete(outboxId);
-        this.outboxIdToItemId.delete(outboxId);
+        this.deliveredIds.delete(outboxId);
+        void this.savePendingCancels();
         try {
           await this.client?.deleteItem(e.item.id);
         } catch {
@@ -320,10 +345,11 @@ export class BackgroundController {
         void this.broadcastEvent({ type: "devices", devices: await this.fetchDevices() });
         return { ok: true };
       case "undo_capture": {
-        const itemId = this.outboxIdToItemId.get(req.outboxId);
+        // outboxId === itemId by protocol invariant (server echoes client ULID)
+        const itemId = this.deliveredIds.has(req.outboxId) ? req.outboxId : undefined;
         if (itemId) {
           // Already delivered — delete the server item
-          this.outboxIdToItemId.delete(req.outboxId);
+          this.deliveredIds.delete(req.outboxId);
           try {
             await this.client?.deleteItem(itemId);
             if (await this.feed.remove(itemId)) {
@@ -344,6 +370,7 @@ export class BackgroundController {
         } else {
           // In-flight race: send is in progress — mark for cancellation on delivery
           this.pendingCancelIds.add(req.outboxId);
+          void this.savePendingCancels();
         }
         return { ok: true };
       }
@@ -358,7 +385,7 @@ export class BackgroundController {
         this.client = null;
         this.auth = null;
         this.failed.clear();
-        this.outboxIdToItemId.clear();
+        this.deliveredIds.clear();
         this.pendingCancelIds.clear();
         this.status = "stopped";
         await this.clearAuth();
@@ -367,6 +394,7 @@ export class BackgroundController {
         await this.deps.storage.set(CURSOR_KEY, "");
         await this.deps.storage.set(OUTBOX_KEY, "[]");
         await this.deps.storage.set(DEVICES_KEY, "[]");
+        await this.deps.storage.set(PENDING_CANCELS_KEY, "[]");
         void this.broadcastEvent({ type: "snapshot", state: await this.snapshot() });
         return { ok: true };
       }

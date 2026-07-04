@@ -207,20 +207,40 @@ export class SyncController {
     // Drain the App Group share-extension outbox mirror into the real Outbox.
     // Each entry carries the PRESERVED ULID from the failed extension POST —
     // re-enqueueing with the same id is idempotent (system spec §8).
-    // Failures are isolated: a native crash must not prevent the engine from starting.
+    //
+    // Loss-proof handoff (peek → enqueue-all → clear → re-push-failures):
+    //   1. Peek without clearing — entries survive a mid-loop crash.
+    //   2. Enqueue each entry individually (per-entry try/catch); collect failures.
+    //   3. Clear the mirror only after the full loop.
+    //   4. Re-push failed entries so the NEXT wake retries them.
+    // If the whole drain block throws (e.g. native App Group unavailable), entries
+    // are still in the mirror and will be retried on the next wake.
     if (this.deps.appGroup) {
       try {
-        const mirrored = await this.deps.appGroup.drainMainOutbox();
+        const mirrored = await this.deps.appGroup.peekMainOutbox();
+        const failed: typeof mirrored = [];
         for (const entry of mirrored) {
-          await this.outbox.enqueue({
-            id: entry.id,
-            kind: entry.kind,
-            body: entry.body,
-            targetDeviceId: entry.targetDeviceId ?? null,
-          });
+          try {
+            await this.outbox.enqueue({
+              id: entry.id,
+              kind: entry.kind,
+              body: entry.body,
+              targetDeviceId: entry.targetDeviceId ?? null,
+            });
+          } catch {
+            // enqueue failed for this entry — keep it for retry on next wake
+            failed.push(entry);
+          }
+        }
+        // Clear the mirror after the loop; only cleared entries were enqueued.
+        await this.deps.appGroup.clearMainOutbox();
+        // Re-push any entries that failed to enqueue so the next wake retries them.
+        for (const entry of failed) {
+          await this.deps.appGroup.pushToMainOutbox(entry);
         }
       } catch {
         // Non-fatal: native App Group unavailable or corrupt — continue.
+        // Entries remain in the mirror and will be retried on the next wake.
       }
     }
 
