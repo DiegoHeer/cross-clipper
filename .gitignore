@@ -16,5 +16,10 @@ node_modules/
 data/
 *.sqlite
 
+# Extension build outputs
+clients/extension/dist/
+clients/extension/dist-firefox/
+clients/extension/e2e-results/
+
 # Subagent scratch reports (worktree root)
 .superpowers-*.md
