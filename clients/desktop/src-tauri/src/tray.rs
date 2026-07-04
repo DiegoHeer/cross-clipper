@@ -14,7 +14,7 @@
 use tauri::{
     menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder},
     tray::{TrayIcon, TrayIconBuilder},
-    AppHandle, Emitter, Manager, Runtime,
+    AppHandle, Manager, Runtime,
 };
 
 // ---------------------------------------------------------------------------
@@ -100,14 +100,47 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         "open" => show_main(app),
         "toggle_capture" => {
-            // Emit an event to the background window to let the TS layer
-            // sync the toggle state.  Actual hotkey re-registration is
-            // driven from the webview via `set_capture_enabled`.
-            let _ = app.emit_to("background", "cc:toggle-capture", ());
+            // Toggle capture-enabled state directly in Rust — no TS roundtrip
+            // needed because `HotkeyStateMutex` already tracks the flag and
+            // the global-shortcut plugin is available here.
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            {
+                use crate::hotkeys;
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+                if let Some(state) = app.try_state::<crate::HotkeyStateMutex>() {
+                    let mut s = state.0.lock().unwrap();
+                    let new_enabled = !s.capture_enabled;
+                    s.capture_enabled = new_enabled;
+                    let gs = app.global_shortcut();
+                    if let Some(sc) = hotkeys::parse_accelerator(&s.capture_combo) {
+                        if new_enabled {
+                            let _ = gs.register(sc);
+                        } else {
+                            let _ = gs.unregister(sc);
+                        }
+                    }
+                    let new_state = if new_enabled {
+                        TrayState::Normal
+                    } else {
+                        TrayState::Paused
+                    };
+                    // Drop the lock before calling set_tray_state (avoids
+                    // potential deadlock if set_tray_state ever reads state).
+                    drop(s);
+                    set_tray_state(app, new_state);
+                }
+            }
         }
         "pause" => {
-            // Emit to background; TS calls back via `pause_capture` command.
-            let _ = app.emit_to("background", "cc:tray-pause", ());
+            // Pause capture for 1 hour directly in Rust (spec §3).
+            use crate::hotkeys::PauseState;
+            if let Some(state) = app.try_state::<crate::HotkeyStateMutex>() {
+                let mut s = state.0.lock().unwrap();
+                s.pause = PauseState::pause_for(60);
+                drop(s);
+            }
+            set_tray_state(app, TrayState::Paused);
         }
         "settings" => show_main(app),
         "quit" => app.exit(0),

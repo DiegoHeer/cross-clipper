@@ -142,7 +142,8 @@ fn set_capture_enabled(app: AppHandle, enabled: bool) {
     use tray::{set_tray_state, TrayState};
 
     if let Some(state) = app.try_state::<HotkeyStateMutex>() {
-        let s = state.0.lock().unwrap();
+        let mut s = state.0.lock().unwrap();
+        s.capture_enabled = enabled;
         let gs = app.global_shortcut();
         if let Some(sc) = hotkeys::parse_accelerator(&s.capture_combo) {
             if enabled {

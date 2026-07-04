@@ -132,6 +132,10 @@ pub struct HotkeyState {
     pub capture_combo: String,
     pub flyout_combo: String,
     pub pause: PauseState,
+    /// Whether the capture hotkey is enabled (toggled via the tray menu).
+    /// Starts `true`; `set_capture_enabled` flips OS registration and updates
+    /// this flag so the tray handler can toggle without a roundtrip to TS.
+    pub capture_enabled: bool,
 }
 
 impl HotkeyState {
@@ -140,6 +144,7 @@ impl HotkeyState {
             capture_combo: capture.to_string(),
             flyout_combo: flyout.to_string(),
             pause: PauseState::Active,
+            capture_enabled: true,
         }
     }
 
@@ -194,5 +199,11 @@ mod tests {
     fn parses_flyout_combo() {
         let sc = parse_accelerator("Ctrl+Alt+V").expect("valid");
         assert_eq!(describe(&sc), "Ctrl+Alt+V");
+    }
+
+    #[test]
+    fn capture_enabled_starts_true() {
+        let state = HotkeyState::new("Ctrl+Alt+C", "Ctrl+Alt+V");
+        assert!(state.capture_enabled);
     }
 }
