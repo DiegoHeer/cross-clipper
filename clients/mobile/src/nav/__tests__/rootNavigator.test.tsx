@@ -7,7 +7,7 @@
  * - Pressing "Settings" navigates to the settings screen.
  */
 import React from "react";
-import { render, fireEvent, waitFor } from "@testing-library/react-native";
+import { render, fireEvent, waitFor, act } from "@testing-library/react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
@@ -61,34 +61,44 @@ function TestWrapper({
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("RootNavigator", () => {
+  let controller: SyncController | null = null;
+
+  afterEach(async () => {
+    // Release engine/outbox timers so the worker can exit cleanly.
+    // Wrap in act() because sleep() emits a state update (status → "stopped").
+    if (controller) {
+      await act(async () => { controller!.sleep(); });
+      controller = null;
+    }
+  });
+
   it("renders three bottom tab labels", async () => {
-    const controller = await makeController();
-    const { getAllByText } = render(
+    controller = await makeController();
+    const { getByRole } = render(
       <TestWrapper controller={controller}>
         <RootNavigator />
       </TestWrapper>,
     );
 
-    // Tab labels appear at least once (may also appear as screen headings)
+    // Each tab renders as an accessible button with the tab label as its name.
     await waitFor(() => {
-      expect(getAllByText("Feed").length).toBeGreaterThanOrEqual(1);
-      expect(getAllByText("Devices").length).toBeGreaterThanOrEqual(1);
-      expect(getAllByText("Settings").length).toBeGreaterThanOrEqual(1);
+      expect(getByRole("button", { name: "Feed" })).toBeTruthy();
+      expect(getByRole("button", { name: "Devices" })).toBeTruthy();
+      expect(getByRole("button", { name: "Settings" })).toBeTruthy();
     });
   });
 
   it("pressing Devices tab shows the devices screen placeholder", async () => {
-    const controller = await makeController();
-    const { getAllByText, getByText } = render(
+    controller = await makeController();
+    const { getByRole, getByText } = render(
       <TestWrapper controller={controller}>
         <RootNavigator />
       </TestWrapper>,
     );
 
-    await waitFor(() => expect(getAllByText("Devices").length).toBeGreaterThanOrEqual(1));
-
-    // Press the "Devices" tab label (first occurrence = tab bar)
-    fireEvent.press(getAllByText("Devices")[0]!);
+    // Wait for the tab bar to mount, then press the Devices tab button.
+    await waitFor(() => expect(getByRole("button", { name: "Devices" })).toBeTruthy());
+    fireEvent.press(getByRole("button", { name: "Devices" }));
 
     // The DevicesScreen renders a "No devices" or similar message
     await waitFor(() => {
@@ -97,16 +107,15 @@ describe("RootNavigator", () => {
   });
 
   it("pressing Settings tab shows the settings screen placeholder", async () => {
-    const controller = await makeController();
-    const { getAllByText, getByText } = render(
+    controller = await makeController();
+    const { getByRole, getByText } = render(
       <TestWrapper controller={controller}>
         <RootNavigator />
       </TestWrapper>,
     );
 
-    await waitFor(() => expect(getAllByText("Settings").length).toBeGreaterThanOrEqual(1));
-
-    fireEvent.press(getAllByText("Settings")[0]!);
+    await waitFor(() => expect(getByRole("button", { name: "Settings" })).toBeTruthy());
+    fireEvent.press(getByRole("button", { name: "Settings" }));
 
     await waitFor(() => {
       // Settings screen renders section headers (Task 9 full implementation)
