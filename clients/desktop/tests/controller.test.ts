@@ -473,4 +473,104 @@ describe("BackgroundController (desktop)", () => {
     await controller.handleRequest({ type: "window_opened" });
     expect(onWindowOpened).toHaveBeenCalledOnce();
   });
+
+  it("pendingCancelIds persists across restarts — delivery ack on restart fires DELETE + toast_update cancelled", async () => {
+    // Scenario: undo arrives while POST is in-flight. App restarts before server acks.
+    // On restart, pendingCancelIds is loaded from cc.pendingCancels before outbox flushes,
+    // so the delivery ack on the new controller still triggers the cancel path.
+
+    let resolvePost!: () => void;
+    const deleted: string[] = [];
+    const workerEvents: import("../src/shared/messages").WorkerEvent[] = [];
+
+    const controlledFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/api/v1/items") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ items: [], next_cursor: null }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      }
+      if (u.includes("/api/v1/items") && init?.method === "POST") {
+        const body = JSON.parse(init.body as string) as Record<string, unknown>;
+        await new Promise<void>((r) => { resolvePost = r; });
+        return new Response(JSON.stringify({
+          id: body["id"] as string,
+          kind: body["kind"],
+          body: body["body"],
+          origin_device_id: "self",
+          target_device_id: null,
+          blob_id: null,
+          created_at: "2026-07-03T00:00:00",
+          deleted_at: null,
+        }), { status: 201, headers: { "content-type": "application/json" } });
+      }
+      const deleteMatch = u.match(/\/api\/v1\/items\/([^/?]+)$/);
+      if (deleteMatch && init?.method === "DELETE") {
+        deleted.push(deleteMatch[1]!);
+        return new Response(null, { status: 204 });
+      }
+      if (u.includes("/api/v1/devices")) {
+        return new Response(JSON.stringify({ devices: [] }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+    }) as typeof fetch;
+
+    // --- Session 1: capture, block POST, user clicks undo (in-flight race path) ---
+    FakeSocket.instances = [];
+    const storage = new MemoryStorage();
+    await storage.set("cc.auth", AUTH);
+    const captureResults1: Array<{ state: string; snippet?: string; outboxId?: string }> = [];
+    const { BackgroundController } = await import("../src/background/controller");
+    const ctrl1 = new BackgroundController({
+      storage,
+      socketFactory: (url) => new FakeSocket(url) as never,
+      fetchFn: controlledFetch,
+      onCaptureResult: (r) => captureResults1.push(r),
+    });
+    await ctrl1.wake();
+
+    await ctrl1.handleCapture({ kind: "text", text: "persist-me" });
+    // Wait for POST to start (outbox is flushing)
+    await new Promise((r) => setTimeout(r, 5));
+
+    const outboxId = captureResults1[0]?.outboxId;
+    expect(outboxId).toBeTruthy();
+
+    // Undo while in-flight → pendingCancelIds.add, saved to cc.pendingCancels
+    await ctrl1.handleRequest({ type: "undo_capture", outboxId: outboxId! });
+
+    // Verify cc.pendingCancels was persisted
+    const saved = await storage.get("cc.pendingCancels");
+    expect(JSON.parse(saved ?? "[]")).toContain(outboxId);
+
+    // --- Simulate restart: new controller over same storage ---
+    FakeSocket.instances = [];
+    await subscribeEvents((e) => workerEvents.push(e));
+
+    const ctrl2 = new BackgroundController({
+      storage,
+      socketFactory: (url) => new FakeSocket(url) as never,
+      fetchFn: controlledFetch,
+    });
+    // doWake loads cc.pendingCancels BEFORE outbox.load / outbox.flush
+    await ctrl2.wake();
+
+    // Now unblock the POST — ctrl2's outbox picks it up and delivers
+    resolvePost();
+    await new Promise((r) => setTimeout(r, 30));
+
+    // DELETE must have been issued (pendingCancelIds path fired on delivery)
+    expect(deleted).toContain(outboxId);
+
+    // toast_update "cancelled" must have been broadcast
+    const cancelToasts = workerEvents.filter(
+      (e) =>
+        e.type === "toast_update" &&
+        (e as { outboxId?: string }).outboxId === outboxId,
+    );
+    expect(cancelToasts.length).toBeGreaterThan(0);
+    expect(cancelToasts[0]).toMatchObject({ type: "toast_update", state: "cancelled" });
+  });
 });

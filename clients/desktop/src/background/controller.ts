@@ -25,6 +25,7 @@ const AUTH_KEY = "cc.auth";
 const DEVICES_KEY = "cc.devices";
 const CURSOR_KEY = "cc.cursor";
 const OUTBOX_KEY = "cc.outbox";
+const PENDING_CANCELS_KEY = "cc.pendingCancels";
 
 interface AuthState {
   baseUrl: string;
@@ -103,6 +104,24 @@ export class BackgroundController {
     return this.waking;
   }
 
+  private async loadPendingCancels(): Promise<void> {
+    const raw = await this.deps.storage.get(PENDING_CANCELS_KEY);
+    if (!raw) return;
+    try {
+      const ids = JSON.parse(raw) as string[];
+      for (const id of ids) this.pendingCancelIds.add(id);
+    } catch {
+      // ignore corrupt data
+    }
+  }
+
+  private async savePendingCancels(): Promise<void> {
+    await this.deps.storage.set(
+      PENDING_CANCELS_KEY,
+      JSON.stringify([...this.pendingCancelIds]),
+    );
+  }
+
   private async doWake(): Promise<void> {
     await this.ensureFeed();
     if (this.engine) {
@@ -135,6 +154,9 @@ export class BackgroundController {
       storage: this.deps.storage,
       onEvent: (e) => void this.onOutboxEvent(e),
     });
+    // Load persisted cancel intents BEFORE outbox can flush so that any in-flight
+    // entry from a previous session that delivers immediately after load is caught.
+    await this.loadPendingCancels();
     await this.outbox.load();
     await this.engine.start();
     void this.outbox.flush();
@@ -197,6 +219,7 @@ export class BackgroundController {
       if (this.pendingCancelIds.has(outboxId)) {
         this.pendingCancelIds.delete(outboxId);
         this.outboxIdToItemId.delete(outboxId);
+        void this.savePendingCancels();
         try {
           await this.client?.deleteItem(e.item.id);
         } catch {
@@ -344,6 +367,7 @@ export class BackgroundController {
         } else {
           // In-flight race: send is in progress — mark for cancellation on delivery
           this.pendingCancelIds.add(req.outboxId);
+          void this.savePendingCancels();
         }
         return { ok: true };
       }
@@ -367,6 +391,7 @@ export class BackgroundController {
         await this.deps.storage.set(CURSOR_KEY, "");
         await this.deps.storage.set(OUTBOX_KEY, "[]");
         await this.deps.storage.set(DEVICES_KEY, "[]");
+        await this.deps.storage.set(PENDING_CANCELS_KEY, "[]");
         void this.broadcastEvent({ type: "snapshot", state: await this.snapshot() });
         return { ok: true };
       }
