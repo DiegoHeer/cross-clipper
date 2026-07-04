@@ -167,8 +167,8 @@ describe("App (live, desktop)", () => {
         },
       });
     });
-    // Task 12 placeholder — must render a recognisable heading, not the feed
-    expect(screen.getByText(/sign in via onboarding/i)).toBeInTheDocument();
+    // Onboarding renders — must show server step heading, not the feed
+    expect(screen.getByRole("heading", { name: /your server/i })).toBeInTheDocument();
     expect(screen.queryByText(/copy something/i)).toBeNull();
   });
 
@@ -193,7 +193,8 @@ describe("App (live, desktop)", () => {
     await act(async () => {
       await dispatchEvent({ type: "auth_required" });
     });
-    expect(screen.getByText(/sign in via onboarding/i)).toBeInTheDocument();
+    // Reauth shows sign-in step of the onboarding flow
+    expect(screen.getByRole("heading", { name: /sign in/i })).toBeInTheDocument();
   });
 
   it("goes straight to feed when already authed on first snapshot", async () => {
@@ -202,10 +203,10 @@ describe("App (live, desktop)", () => {
     expect(
       screen.getByText(/copy something on another device, or type below/i),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/sign in via onboarding/i)).toBeNull();
+    expect(screen.queryByText(/your server/i)).toBeNull();
   });
 
-  it("settings gear button is rendered (no-op placeholder)", async () => {
+  it("settings gear button is rendered and opens settings", async () => {
     await renderApp();
     expect(screen.getByRole("button", { name: /settings/i })).toBeInTheDocument();
   });

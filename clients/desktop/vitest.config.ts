@@ -10,11 +10,15 @@ export default defineConfig({
       "@tauri-apps/api/event": path.resolve(__dirname, "tests/tauriMock.ts"),
       "@tauri-apps/plugin-store": path.resolve(__dirname, "tests/tauriMock.ts"),
       // Plugin stubs — no-ops in the jsdom test environment.
+      "@tauri-apps/api/core": path.resolve(__dirname, "tests/tauriMock.ts"),
       "@tauri-apps/plugin-clipboard-manager": path.resolve(
         __dirname,
         "tests/tauriMock.ts",
       ),
       "@tauri-apps/plugin-opener": path.resolve(__dirname, "tests/tauriMock.ts"),
+      "@tauri-apps/plugin-notification": path.resolve(__dirname, "tests/tauriMock.ts"),
+      "@tauri-apps/plugin-autostart": path.resolve(__dirname, "tests/tauriMock.ts"),
+      "@tauri-apps/plugin-os": path.resolve(__dirname, "tests/tauriMock.ts"),
     },
   },
   test: {
