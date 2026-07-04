@@ -4,9 +4,23 @@ import { Compose } from "./components/Compose";
 import { FeedCard } from "./components/FeedCard";
 import { fixtureDevices, fixtureEntries } from "./fixtures";
 import { platformIcon } from "../shared/model";
+import { Settings } from "./settings/Settings";
+import { INITIAL_STATE } from "./useWorker";
+import type { WorkerApi } from "./useWorker";
+
+const stubApi: WorkerApi = {
+  send: async () => {},
+  retry: async () => {},
+  deleteItem: async () => {},
+  refresh: async () => {},
+  renameDevice: async () => {},
+  revokeDevice: async () => {},
+  signOut: async () => {},
+};
 
 export default function App() {
   const [filter, setFilter] = useState<string | null>(null);
+  const [view, setView] = useState<"feed" | "settings">("feed");
   const devices = fixtureDevices;
   const entries = fixtureEntries;
 
@@ -17,13 +31,17 @@ export default function App() {
   const nameOf = (id: string) => devices.find((d) => d.id === id)?.name ?? "Unknown device";
   const iconOf = (id: string) => platformIcon(devices.find((d) => d.id === id)?.platform ?? "");
 
+  if (view === "settings") {
+    return <Settings state={INITIAL_STATE} api={stubApi} onBack={() => setView("feed")} />;
+  }
+
   return (
     <div className="app">
       <header className="header">
         <span>
           <span aria-hidden>⧉</span> <span>CrossClipper</span>
         </span>
-        <button aria-label="Settings">⚙</button>
+        <button aria-label="Settings" onClick={() => setView("settings")}>⚙</button>
       </header>
       <div />
       <div className="main">
