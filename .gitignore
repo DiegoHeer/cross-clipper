@@ -29,3 +29,8 @@ clients/mobile/dist/
 
 # Subagent scratch reports (worktree root)
 .superpowers-*.md
+
+# Desktop build outputs
+clients/desktop/dist/
+clients/desktop/src-tauri/target/
+clients/desktop/src-tauri/gen/

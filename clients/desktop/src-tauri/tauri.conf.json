@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CrossClipper",
+  "version": "0.1.0",
+  "identifier": "com.crossclipper.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5183",
+    "beforeDevCommand": "npm run dev --workspace @crossclipper/desktop",
+    "beforeBuildCommand": "npm run build --workspace @crossclipper/desktop"
+  },
+  "app": {
+    "windows": [
+      { "label": "background", "url": "background.html", "visible": false, "skipTaskbar": true },
+      { "label": "main", "title": "CrossClipper", "url": "index.html", "width": 900, "height": 620, "minWidth": 640, "minHeight": 480, "visible": false },
+      { "label": "flyout", "url": "flyout.html", "decorations": false, "alwaysOnTop": true, "skipTaskbar": true, "resizable": false, "shadow": true, "width": 360, "height": 480, "visible": false },
+      { "label": "toast", "url": "toast.html", "decorations": false, "alwaysOnTop": true, "skipTaskbar": true, "resizable": false, "focus": false, "transparent": true, "shadow": false, "width": 360, "height": 96, "visible": false }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"],
+    "windows": { "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true } }
+  }
+}
