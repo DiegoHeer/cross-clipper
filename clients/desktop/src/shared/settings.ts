@@ -120,6 +120,17 @@ export async function saveHotkeys(h: HotkeysConfig): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Server version (cached at onboarding / probe time)
+// ---------------------------------------------------------------------------
+export async function saveServerVersion(version: string): Promise<void> {
+  await writeJson(SERVER_VERSION_KEY, version);
+}
+
+export async function loadServerVersion(): Promise<string | null> {
+  return readJson<string>(SERVER_VERSION_KEY);
+}
+
+// ---------------------------------------------------------------------------
 // Appearance (stored copy + localStorage mirror for pre-paint reads)
 // ---------------------------------------------------------------------------
 export async function loadAppearanceStored(): Promise<Appearance> {

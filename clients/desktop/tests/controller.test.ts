@@ -458,4 +458,19 @@ describe("BackgroundController (desktop)", () => {
     const snap = await requestBackground<StateSnapshot>({ type: "get_state" });
     expect(snap.authed).toBe(true);
   });
+
+  it("window_opened calls onWindowOpened hook → setTrayState(false) via fake", async () => {
+    FakeSocket.instances = [];
+    const storage = new MemoryStorage();
+    const onWindowOpened = vi.fn();
+    const { BackgroundController } = await import("../src/background/controller");
+    const controller = new BackgroundController({
+      storage,
+      socketFactory: (url) => new FakeSocket(url) as never,
+      fetchFn: makeFetch().fetchFn,
+      onWindowOpened,
+    });
+    await controller.handleRequest({ type: "window_opened" });
+    expect(onWindowOpened).toHaveBeenCalledOnce();
+  });
 });

@@ -10,10 +10,13 @@ import { useBridge } from "./useBridge";
 import { requestBackground } from "../shared/bridge";
 import { writeText as clipboardWrite } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { Onboarding } from "./onboarding/Onboarding";
+import { Settings } from "./settings/Settings";
 
 export default function App() {
   const { state, api } = useBridge();
   const [filter, setFilter] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Latched onboarding flag: set once on the first ready snapshot.
   // null = not yet determined (still loading).
@@ -23,6 +26,14 @@ export default function App() {
   useEffect(() => {
     if (state.ready && onboarding === null) setOnboarding(!state.authed);
   }, [state.ready, state.authed, onboarding]);
+
+  // Clear tray unread badge on mount and whenever the window regains focus.
+  useEffect(() => {
+    const clearUnread = () => void requestBackground({ type: "window_opened" });
+    clearUnread();
+    window.addEventListener("focus", clearUnread);
+    return () => window.removeEventListener("focus", clearUnread);
+  }, []);
 
   const deviceViews = useMemo(
     () => state.devices.map((d) => toDeviceView(d, state.deviceId)),
@@ -82,19 +93,21 @@ export default function App() {
     );
   }
 
-  // Onboarding / auth required — Task 12 placeholder
+  // Onboarding / reauth
   if (onboarding || state.authRequired) {
     return (
-      <div className="app app-onboarding">
-        <h1>CrossClipper</h1>
-        <p>
-          {/* Task 12 — Onboarding component lands in PR 7. */}
-          Sign in via onboarding — coming in PR 7.
-        </p>
-        {state.authRequired && (
-          <p className="notice">Session expired or device revoked — sign in again.</p>
-        )}
-      </div>
+      <Onboarding
+        mode={state.authRequired ? "reauth" : "fresh"}
+        initialServer={state.authRequired ? (state.baseUrl ?? undefined) : undefined}
+        notice={state.authRequired ? "Session expired or device revoked — sign in again." : undefined}
+        onComplete={() => setOnboarding(false)}
+      />
+    );
+  }
+
+  if (showSettings) {
+    return (
+      <Settings state={state} api={api} onBack={() => setShowSettings(false)} />
     );
   }
 
@@ -104,8 +117,7 @@ export default function App() {
         <span>
           <span aria-hidden>⧉</span> <span>CrossClipper</span>
         </span>
-        {/* Settings routes land in PR 7 — gear is a no-op placeholder */}
-        <button aria-label="Settings" onClick={() => {}}>⚙</button>
+        <button aria-label="Settings" onClick={() => setShowSettings(true)}>⚙</button>
       </header>
       {state.authed && state.status !== "live" ? <Banner kind="reconnecting" /> : <div />}
       <div className="main">
