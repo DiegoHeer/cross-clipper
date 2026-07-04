@@ -57,7 +57,7 @@ describe("Onboarding", () => {
     await userEvent.click(screen.getByRole("button", { name: /next/i }));
 
     // step 2 (sign-in mode: registration closed)
-    expect(await screen.findByText(/sign in/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /sign in/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/email/i), "a@b.c");
     await userEvent.type(screen.getByLabelText(/password/i), "hunter2!");
     await userEvent.click(screen.getByRole("button", { name: /sign in/i }));

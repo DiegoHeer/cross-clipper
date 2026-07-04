@@ -33,7 +33,7 @@ export function SignInStep({ baseUrl, mode, notice, onDone }: SignInStepProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const heading = mode === "create" ? "Create your account" : null;
+  const heading = mode === "create" ? "Create your account" : "Sign in";
   const cta = mode === "create" ? "Create account" : "Sign in";
 
   const submit = async () => {
