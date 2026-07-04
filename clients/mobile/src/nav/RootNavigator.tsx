@@ -111,7 +111,8 @@ function TabNavigator(): React.JSX.Element {
  * on the normal onboarding/auth flow. The intent is reset so it doesn't resurface
  * after the user signs in.
  */
-function TabsWithIntentWatcher(): React.JSX.Element {
+/** Exported for unit testing only — do not use outside RootNavigator. */
+export function TabsWithIntentWatcher(): React.JSX.Element {
   const { shared, reset } = useShareIntent();
   const { authed } = useSync();
   const navigation =
