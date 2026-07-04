@@ -32,7 +32,7 @@ export interface SendDirectInput {
 }
 
 export type SendDirectResult =
-  | { status: "sent"; item: object }
+  | { status: "sent"; item?: object }
   | { status: "queued"; retryHint: string };
 
 // ─── Implementation ───────────────────────────────────────────────────────────

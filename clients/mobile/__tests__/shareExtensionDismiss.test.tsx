@@ -59,6 +59,10 @@ describe("ShareRoot — dismiss after sent feedback (Finding 2)", () => {
     jest.useRealTimers();
   });
 
+  // Explicit timeout: fake-timer tests flush async microtasks (Promise.resolve()
+  // chains) inside act(), which adds measurable overhead under full-suite worker
+  // contention. 15 s gives a 10×+ safety margin over the ~1.2 s DISMISS_DELAY_MS
+  // while staying well under CI limits.
   it("calls close() after DISMISS_DELAY_MS when onSent fires", async () => {
     const { getAllByRole } = render(<ShareExtensionRoot />);
 
@@ -86,5 +90,5 @@ describe("ShareRoot — dismiss after sent feedback (Finding 2)", () => {
     });
 
     expect(mockClose).toHaveBeenCalledTimes(1);
-  });
+  }, 15000);
 });

@@ -30,3 +30,17 @@ jest.mock("expo-device", () => ({
 }));
 
 jest.mock("expo-share-extension", () => ({ close: jest.fn() }), { virtual: true });
+
+// expo-share-intent uses a native module (ExpoShareIntentModule) that doesn't
+// exist in the jest environment. Mock the whole package at the module boundary.
+// Individual tests override this via jest.mock() with custom return values.
+jest.mock("expo-share-intent", () => ({
+  __esModule: true,
+  useShareIntent: jest.fn().mockReturnValue({
+    isReady: true,
+    hasShareIntent: false,
+    shareIntent: { files: null, text: null, webUrl: null, type: null },
+    resetShareIntent: jest.fn(),
+    error: null,
+  }),
+}));
