@@ -20,6 +20,8 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { ShareSheet } from "./ShareSheet";
 import { useSync } from "../sync/useSync";
+import { useTheme } from "../theme/ThemeProvider";
+import type { Tokens } from "../theme/theme";
 import type { SendDirectInput, SendDirectResult } from "./sendDirect";
 import type { RootStackParamList } from "../nav/RootNavigator";
 
@@ -31,6 +33,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "AndroidShare">;
 
 export function AndroidShareModal({ route, navigation }: Props): React.JSX.Element | null {
   const { send, devices, selfDeviceId } = useSync();
+  const tokens = useTheme();
   const { shared } = route.params;
 
   const handleSent = useCallback(() => {
@@ -64,6 +67,8 @@ export function AndroidShareModal({ route, navigation }: Props): React.JSX.Eleme
   // belt-and-suspenders only.
   if (Platform.OS !== "android") return null;
 
+  const s = styles(tokens);
+
   return (
     <Modal
       visible
@@ -77,7 +82,7 @@ export function AndroidShareModal({ route, navigation }: Props): React.JSX.Eleme
       >
         <View style={s.backdrop} />
       </TouchableWithoutFeedback>
-      <View style={s.sheet}>
+      <View style={s.sheet} testID="android-share-sheet-container">
         <ShareSheet
           shared={shared}
           devices={devices}
@@ -93,19 +98,21 @@ export function AndroidShareModal({ route, navigation }: Props): React.JSX.Eleme
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  sheet: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingBottom: 32,
-  },
-});
+function styles(tokens: Tokens) {
+  return StyleSheet.create({
+    backdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "rgba(0,0,0,0.5)",
+    },
+    sheet: {
+      position: "absolute",
+      bottom: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: tokens.surface,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+      paddingBottom: 32,
+    },
+  });
+}

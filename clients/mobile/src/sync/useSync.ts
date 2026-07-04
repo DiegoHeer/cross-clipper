@@ -21,6 +21,7 @@ import type { SyncSnapshot } from "./SyncController";
 import { AlertManager } from "../alerts/AlertManager";
 import { expoNotificationSink } from "../alerts/notifications";
 import { loadPrefs } from "../settings/prefs";
+import { appGroup } from "../platform/appGroup";
 
 // ─── Context ─────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,7 @@ export function SyncProvider({ children, controller: injected }: SyncProviderPro
         socketFactory: rnSocketFactory,
         appState: AppState,
         alertSink,
+        appGroup,
       });
     }
   }
