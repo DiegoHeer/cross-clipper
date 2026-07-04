@@ -14,7 +14,12 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.crossclipper.app"
+      "bundleIdentifier": "com.crossclipper.app",
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.crossclipper.app"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -26,6 +31,30 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": []
+    "plugins": [
+      [
+        "expo-share-extension",
+        {
+          "targetName": "CrossClipperShareExtension",
+          "bundleIdentifier": "com.crossclipper.app.ShareExtension",
+          "entitlements": {
+            "com.apple.security.application-groups": [
+              "group.com.crossclipper.app"
+            ]
+          },
+          "activationRules": {
+            "NSExtensionActivationSupportsText": true,
+            "NSExtensionActivationSupportsWebURLWithMaxCount": 1
+          },
+          "shareExtensionEntryPoint": "index.share"
+        }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "disableIOS": true
+        }
+      ]
+    ]
   }
 }
