@@ -4,6 +4,7 @@ import type { SyncStorage } from "@crossclipper/core";
 type Area = {
   get(k: string | string[]): Promise<Record<string, unknown>>;
   set(v: Record<string, unknown>): Promise<void>;
+  remove(k: string | string[]): Promise<void>;
 };
 
 /** browser.storage.local as core's SyncStorage — the worker's persistence
@@ -19,5 +20,9 @@ export class ExtensionStorage implements SyncStorage {
 
   async set(key: string, value: string): Promise<void> {
     await this.area.set({ [key]: value });
+  }
+
+  async remove(key: string): Promise<void> {
+    await this.area.remove(key);
   }
 }
