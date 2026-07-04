@@ -24,6 +24,7 @@ module.exports = {
       "|native-base" +
       "|react-native-svg" +
       "|@crossclipper" +
+      "|@react-navigation" +
       ")/)",
     // Also ignore the reanimated plugin
     "node_modules/react-native-reanimated/plugin/",
