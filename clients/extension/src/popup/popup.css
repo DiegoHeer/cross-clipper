@@ -1,0 +1,70 @@
+html,
+body,
+#root {
+  margin: 0;
+  width: 380px;
+  height: 540px;
+  font-family: var(--font-ui);
+  color: var(--text);
+  background: var(--bg);
+}
+.app { display: grid; grid-template-rows: auto auto 1fr auto; height: 100%; }
+.header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.header button { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 16px; }
+.banner { padding: var(--space-1) var(--space-3); background: var(--accent-soft); color: var(--text); font-size: 12px; }
+.main { display: grid; grid-template-columns: 84px 1fr; min-height: 0; }
+.rail {
+  display: flex; flex-direction: column; gap: var(--space-1);
+  padding: var(--space-2); background: var(--surface); border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+.rail button {
+  display: flex; align-items: center; gap: var(--space-1);
+  padding: var(--space-1) var(--space-2); border: none; background: none; cursor: pointer;
+  border-radius: var(--radius-sm); color: var(--text); font-size: 12px; text-align: left;
+}
+.rail button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.rail-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dot-online { background: var(--success); }
+.dot-offline { background: var(--border); }
+.feed { overflow-y: auto; padding: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: var(--space-2) var(--space-3);
+}
+.card-header { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: var(--space-1); }
+.card-body {
+  margin: 0 0 var(--space-2);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  overflow-wrap: anywhere; font-size: 13px;
+}
+.card-body a { color: var(--accent); }
+.card-actions { display: flex; gap: var(--space-2); }
+.card-actions button, .card-retry, .chip, .compose-row button {
+  border: 1px solid var(--border); background: var(--surface-raised); color: var(--text);
+  border-radius: var(--radius-sm); padding: 2px var(--space-2); cursor: pointer; font-size: 12px;
+}
+.card-actions button.danger, .card-retry { color: var(--danger); }
+.card-new { outline: 2px solid var(--accent-soft); }
+.card-pending { font-size: 11px; }
+.text-muted { color: var(--text-muted); }
+.chips { display: flex; gap: var(--space-1); flex-wrap: wrap; margin-bottom: var(--space-1); }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.compose { padding: var(--space-2) var(--space-3); background: var(--surface); border-top: 1px solid var(--border); }
+.compose-row { display: flex; gap: var(--space-2); align-items: flex-end; }
+.compose-row textarea {
+  flex: 1; resize: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg); color: var(--text); padding: var(--space-1) var(--space-2); font-family: inherit;
+}
+.compose-row button { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.empty { color: var(--text-muted); text-align: center; margin-top: var(--space-5); font-size: 13px; padding: 0 var(--space-4); }
+.pill {
+  position: sticky; top: 0; align-self: center;
+  background: var(--accent); color: var(--accent-fg); border: none;
+  border-radius: 999px; padding: 2px var(--space-3); cursor: pointer; font-size: 12px;
+}
