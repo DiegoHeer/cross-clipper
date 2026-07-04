@@ -35,7 +35,7 @@ interface AuthState {
 
 /** Result type emitted to the Rust toast layer (wired in main.tsx Task 14). */
 export interface CaptureResult {
-  state: "synced" | "queued" | "sensitive" | "empty" | "unsupported";
+  state: "synced" | "queued" | "sensitive" | "empty" | "unsupported" | "cancelled";
   snippet?: string;
   outboxId?: string;
 }
@@ -191,7 +191,7 @@ export class BackgroundController {
       // Track the mapping for undo
       this.outboxIdToItemId.set(outboxId, e.item.id);
 
-      // If undo arrived before delivery, delete immediately
+      // If undo arrived before delivery (in-flight race), delete immediately
       if (this.pendingCancelIds.has(outboxId)) {
         this.pendingCancelIds.delete(outboxId);
         this.outboxIdToItemId.delete(outboxId);
@@ -200,6 +200,7 @@ export class BackgroundController {
         } catch {
           // best-effort; item will reconcile on next sync
         }
+        void this.broadcastEvent({ type: "toast_update", outboxId, state: "cancelled" });
         return;
       }
 
@@ -329,8 +330,17 @@ export class BackgroundController {
           } catch {
             // best-effort
           }
+        } else if (this.outbox && (await this.outbox.cancel(req.outboxId))) {
+          // Still queued and not yet posted — removed locally, no server round-trip
+          await this.broadcastOutbox();
+          void this.broadcastEvent({
+            type: "toast_update",
+            outboxId: req.outboxId,
+            state: "cancelled",
+          });
+          this.deps.onCaptureResult?.({ state: "cancelled", outboxId: req.outboxId });
         } else {
-          // Still queued — mark for cancellation on delivery
+          // In-flight race: send is in progress — mark for cancellation on delivery
           this.pendingCancelIds.add(req.outboxId);
         }
         return { ok: true };

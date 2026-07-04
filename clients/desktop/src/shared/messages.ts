@@ -50,11 +50,11 @@ export type WorkerEvent =
   | { type: "auth_required" }
   | {
       type: "capture_result";
-      state: "synced" | "queued" | "sensitive" | "empty" | "unsupported";
+      state: "synced" | "queued" | "sensitive" | "empty" | "unsupported" | "cancelled";
       snippet?: string;
       outboxId?: string;
     }
-  | { type: "toast_update"; outboxId: string; state: "synced" };
+  | { type: "toast_update"; outboxId: string; state: "synced" | "cancelled" };
 
 const isStr = (v: unknown): v is string => typeof v === "string";
 const rec = (v: unknown): v is Record<string, unknown> =>
@@ -94,6 +94,7 @@ const CAPTURE_STATES = new Set([
   "sensitive",
   "empty",
   "unsupported",
+  "cancelled",
 ]);
 
 export function isWorkerEvent(v: unknown): v is WorkerEvent {

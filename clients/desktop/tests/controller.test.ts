@@ -260,6 +260,186 @@ describe("BackgroundController (desktop)", () => {
     expect(items === null || items === "" || JSON.parse(items ?? "[]").length === 0).toBe(true);
   });
 
+  it("undo while queued (server blocked on A, undo B) — B never persists, toast shows cancelled", async () => {
+    // Strategy: entry A is in-flight (blocking server), entry B is behind A (index 1, attempts=0).
+    // undo_capture for B: since flushing=true (A in-flight), cancel() returns false → pendingCancelIds.
+    // When A succeeds and B is subsequently delivered, pendingCancelIds fires: B is deleted,
+    // toast_update "cancelled" is broadcast. Net: B never persists on the server.
+    let resolveA!: (v: unknown) => void;
+    const pendingPosts: Array<{ id: string; resolve: (v: unknown) => void }> = [];
+    const allDeleted: string[] = [];
+
+    const controlledFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/api/v1/items") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ items: [], next_cursor: null }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      }
+      if (u.includes("/api/v1/items") && init?.method === "POST") {
+        const body = JSON.parse(init.body as string) as Record<string, unknown>;
+        const id = body["id"] as string;
+        return new Promise<Response>((resolve) => {
+          pendingPosts.push({
+            id,
+            resolve: (v: unknown) => {
+              void v;
+              resolve(new Response(JSON.stringify({
+                id,
+                kind: body["kind"],
+                body: body["body"],
+                origin_device_id: "self",
+                target_device_id: null,
+                blob_id: null,
+                created_at: "2026-07-03T00:00:00",
+                deleted_at: null,
+              }), { status: 201, headers: { "content-type": "application/json" } }));
+            },
+          });
+        });
+      }
+      const deleteMatch = u.match(/\/api\/v1\/items\/([^/?]+)$/);
+      if (deleteMatch && init?.method === "DELETE") {
+        allDeleted.push(deleteMatch[1]!);
+        return new Response(null, { status: 204 });
+      }
+      if (u.includes("/api/v1/devices")) {
+        return new Response(JSON.stringify({ devices: [] }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+    }) as typeof fetch;
+
+    FakeSocket.instances = [];
+    const storage = new MemoryStorage();
+    await storage.set("cc.auth", AUTH);
+    const { BackgroundController } = await import("../src/background/controller");
+    const controller = new BackgroundController({
+      storage,
+      socketFactory: (url) => new FakeSocket(url) as never,
+      fetchFn: controlledFetch,
+    });
+    await controller.wake();
+
+    const workerEvents: import("../src/shared/messages").WorkerEvent[] = [];
+    await subscribeEvents((e) => workerEvents.push(e));
+
+    // Send A — POST starts and blocks
+    const resA = (await controller.handleRequest({
+      type: "send", kind: "text", body: "entry-A", targetDeviceId: null,
+    })) as { outboxId: string };
+    const idA = resA.outboxId;
+
+    // Wait for A's POST to start
+    await new Promise((r) => setTimeout(r, 5));
+
+    // Send B — queued behind A
+    const resB = (await controller.handleRequest({
+      type: "send", kind: "text", body: "entry-B", targetDeviceId: null,
+    })) as { outboxId: string };
+    const idB = resB.outboxId;
+
+    // Undo B — flushing=true (A in-flight) → cancel(B) returns false → pendingCancelIds
+    await controller.handleRequest({ type: "undo_capture", outboxId: idB });
+
+    // Unblock A → A delivers. B flushes next → B delivers → pendingCancelIds fires → DELETE B
+    const postA = pendingPosts.find((p) => p.id === idA);
+    postA?.resolve(undefined);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Unblock B if it started a POST
+    const postB = pendingPosts.find((p) => p.id === idB);
+    postB?.resolve(undefined);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // B must have been deleted (pendingCancelIds path fired on B's delivery)
+    expect(allDeleted).toContain(idB);
+
+    // toast_update "cancelled" must have been broadcast for B
+    const toastEvents = workerEvents.filter(
+      (e) => e.type === "toast_update" && (e as { outboxId?: string }).outboxId === idB,
+    );
+    expect(toastEvents.length).toBeGreaterThan(0);
+    expect(toastEvents[0]).toMatchObject({ type: "toast_update", state: "cancelled" });
+    void resolveA; // suppress unused var warning
+  });
+
+  it("undo racing delivery → exactly one deleteItem after ack, no double-delete", async () => {
+    let resolvePost!: (item: unknown) => void;
+    const postControlled = new Promise<unknown>((r) => { resolvePost = r; });
+    const deleted: string[] = [];
+    let postCalled = false;
+
+    const racingFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/api/v1/items") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ items: [], next_cursor: null }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      }
+      if (u.includes("/api/v1/items") && init?.method === "POST") {
+        postCalled = true;
+        const body = JSON.parse(init.body as string) as Record<string, unknown>;
+        // Block until test resolves
+        await postControlled;
+        return new Response(JSON.stringify({
+          id: body["id"] ?? "srv01",
+          kind: body["kind"],
+          body: body["body"],
+          origin_device_id: "self",
+          target_device_id: null,
+          blob_id: null,
+          created_at: "2026-07-03T00:00:00",
+          deleted_at: null,
+        }), { status: 201, headers: { "content-type": "application/json" } });
+      }
+      const deleteMatch = u.match(/\/api\/v1\/items\/([^/?]+)$/);
+      if (deleteMatch && init?.method === "DELETE") {
+        deleted.push(deleteMatch[1]!);
+        return new Response(null, { status: 204 });
+      }
+      if (u.includes("/api/v1/devices")) {
+        return new Response(JSON.stringify({ devices: [] }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+    }) as typeof fetch;
+
+    FakeSocket.instances = [];
+    const storage = new MemoryStorage();
+    await storage.set("cc.auth", AUTH);
+    const captureResults: Array<{ state: string; snippet?: string; outboxId?: string }> = [];
+    const { BackgroundController } = await import("../src/background/controller");
+    const controller = new BackgroundController({
+      storage,
+      socketFactory: (url) => new FakeSocket(url) as never,
+      fetchFn: racingFetch,
+      onCaptureResult: (r) => captureResults.push(r),
+    });
+    await controller.wake();
+
+    // Capture — POST is blocked
+    await controller.handleCapture({ kind: "text", text: "race me" });
+    // Wait for POST to start
+    await new Promise((r) => setTimeout(r, 5));
+    expect(postCalled).toBe(true);
+
+    const outboxId = captureResults[0]?.outboxId;
+    expect(outboxId).toBeTruthy();
+
+    // Issue undo while POST is in-flight (cancel returns false → pendingCancelIds)
+    await controller.handleRequest({ type: "undo_capture", outboxId: outboxId! });
+
+    // Now unblock the POST — delivery fires, pendingCancelIds path deletes
+    resolvePost(undefined);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Exactly one DELETE
+    expect(deleted).toHaveLength(1);
+  });
+
   it("get_state returns the snapshot via handleRequest", async () => {
     const { controller } = await makeController({ "cc.auth": AUTH });
     await controller.wake();
