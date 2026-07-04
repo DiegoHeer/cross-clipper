@@ -21,6 +21,12 @@ import httpx
 import pytest
 
 # ---------------------------------------------------------------------------
+# External-server mode
+# ---------------------------------------------------------------------------
+
+_EXTERNAL_BASE_URL: str | None = os.environ.get("CC_E2E_BASE_URL")
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -104,8 +110,13 @@ def _wait_port_free(
     )
 
 
-def _stop_server(proc: subprocess.Popen, *, timeout: float = 5.0) -> None:
-    """Gracefully stop the server, force-kill if it doesn't exit in time."""
+def _stop_server(proc: subprocess.Popen | None, *, timeout: float = 5.0) -> None:
+    """Gracefully stop the server, force-kill if it doesn't exit in time.
+
+    No-op when proc is None (external-server mode).
+    """
+    if proc is None:
+        return
     proc.terminate()
     try:
         proc.wait(timeout=timeout)
@@ -124,7 +135,7 @@ class ServerInfo:
     base_url: str
     port: int
     data_dir: Path
-    proc: subprocess.Popen
+    proc: subprocess.Popen | None
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +147,16 @@ class ServerInfo:
 def server(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> Generator[ServerInfo, None, None]:
-    """Boot a real uvicorn server for the session; yield ServerInfo; tear down."""
+    """Boot a real uvicorn server for the session; yield ServerInfo; tear down.
+
+    When CC_E2E_BASE_URL is set the fixture targets that URL instead of
+    spawning a subprocess.  proc is None in that case.
+    """
+    if _EXTERNAL_BASE_URL:
+        base_url = _EXTERNAL_BASE_URL.rstrip("/")
+        _wait_healthy(base_url)
+        yield ServerInfo(base_url=base_url, port=0, data_dir=Path("/unused"), proc=None)
+        return
     data_dir = tmp_path_factory.mktemp("e2e_data")
     port = _free_port()
     proc = _start_server(port, data_dir)
@@ -183,7 +203,15 @@ def first_run_server(tmp_path: Path) -> Generator[ServerInfo, None, None]:
 
     Uses the production default (CC_ALLOW_REGISTRATION=false): first
     register succeeds (empty DB, count=0); second attempt → 403.
+
+    Skips in external-server mode: the journey requires a truly empty data
+    dir, which a shared container cannot provide.  Container-level checks
+    in Layer D cover overall image correctness.
     """
+    if _EXTERNAL_BASE_URL:
+        pytest.skip(
+            "requires local process control; container-level checks cover this in Layer D"
+        )
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     port = _free_port()
@@ -207,7 +235,14 @@ def restart_server(tmp_path: Path) -> Generator[ServerInfo, None, None]:
     Dedicated server fixture for journey 5.  Provides a fresh server that the
     test can kill and restart on the same port/data-dir without affecting the
     session-scoped server used by other journeys.
+
+    Skips in external-server mode: the journey kills and restarts the server
+    process, which is not available when targeting a remote container.
     """
+    if _EXTERNAL_BASE_URL:
+        pytest.skip(
+            "requires local process control; container-level checks cover this in Layer D"
+        )
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     port = _free_port()
