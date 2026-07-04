@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClient } from "../src/api/client";
 import { MemoryStorage } from "../src/storage";
@@ -266,6 +266,131 @@ describe("SyncEngine scenarios", () => {
     expect(itemEvents).toHaveLength(0);
 
     engine.stop();
+  });
+
+  // Pull-retry backoff growth.
+  // Uses real timers with tight delays (same idiom as other SyncEngine tests).
+  // random: () => 1 → jitter factor = 0.5 + 1*0.5 = 1.0, so delay = min(max, base*2^n) exactly.
+  describe("pull-retry exponential backoff", () => {
+    it("delay grows exponentially capped at maxMs on repeated pull failures", async () => {
+      const server = new FakeServer();
+      server.alwaysRejectListWith = { status: 503, code: "unavailable" };
+      // base=4ms, max=20ms, random=()=>1 → delays: 4, 8, 16, 20(cap), …
+      // Cumulative fire times: attempt0≈0, attempt1≈4, attempt2≈12, attempt3≈28, attempt4≈48.
+      const engine = new SyncEngine({
+        client: new ApiClient({ baseUrl: "http://test", fetchFn: server.fetchFn }),
+        storage: new MemoryStorage(),
+        socketFactory: server.socketFactory,
+        wsUrl: () => "ws://test/api/v1/ws?token=t",
+        backoff: { baseMs: 4, maxMs: 20, random: () => 1 },
+        pingIntervalMs: 500,
+      });
+      engine.onEvent(() => {});
+
+      await engine.start();
+      // attempt 0 fires at t≈0 (WS open → resync). Delay after failure = 4ms.
+      await sleep(2);
+      expect(server.listAttempts).toBe(1); // attempt 0 done
+      // attempt 1 fires at t≈4ms. Delay = 8ms.
+      await sleep(4);
+      expect(server.listAttempts).toBe(2); // attempt 1 done (at 6ms total, just past 4ms mark)
+      // attempt 2 fires at t≈12ms. Delay = 16ms.
+      await sleep(8);
+      expect(server.listAttempts).toBe(3); // attempt 2 done (at 14ms total, just past 12ms mark)
+      // attempt 3 fires at t≈28ms. Delay = min(20, 32) = 20ms (capped).
+      await sleep(16);
+      expect(server.listAttempts).toBe(4); // attempt 3 done (at 30ms total, just past 28ms mark)
+      // attempt 4 fires at t≈48ms.
+      await sleep(20);
+      expect(server.listAttempts).toBe(5); // attempt 4 done (at 50ms total)
+
+      engine.stop();
+    });
+
+    it("backoff resets to base after a successful pull", async () => {
+      const server = new FakeServer();
+      server.alwaysRejectListWith = { status: 503, code: "unavailable" };
+      // base=5ms, max=40ms, random=()=>1 → delays: 5, 10, 20, 40(cap).
+      const engine = new SyncEngine({
+        client: new ApiClient({ baseUrl: "http://test", fetchFn: server.fetchFn }),
+        storage: new MemoryStorage(),
+        socketFactory: server.socketFactory,
+        wsUrl: () => "ws://test/api/v1/ws?token=t",
+        backoff: { baseMs: 5, maxMs: 40, random: () => 1 },
+        pingIntervalMs: 500,
+      });
+      engine.onEvent(() => {});
+
+      await engine.start();
+      // Three failures: delays 5, 10, 20ms → attempt 3 fires at accumulated ≈35ms.
+      await sleep(4);  expect(server.listAttempts).toBe(1); // attempt 0 done
+      await sleep(6);  expect(server.listAttempts).toBe(2); // attempt 1 at +5ms
+      await sleep(12); expect(server.listAttempts).toBe(3); // attempt 2 at +10ms
+
+      // Let the server succeed on attempt 3 (fires after 20ms from attempt 2).
+      server.alwaysRejectListWith = null;
+      await sleep(22); expect(server.listAttempts).toBe(4); // attempt 3 succeeds
+      expect(server.listCallCount).toBe(1); // exactly one success
+
+      // After success, pullAttempt is reset to 0.
+      // Next failure sequence must restart at delay=5ms (not carry 40ms from before).
+      server.alwaysRejectListWith = { status: 503, code: "unavailable" };
+      const attemptsBeforeReset = server.listAttempts;
+
+      // WS drop → socket reconnects and triggers a new resync pull.
+      // The reconnect itself has backoff ≈5ms. After reconnect + pull failure, retry delay must be 5ms.
+      server.lastSocket()!.serverDrop();
+      await sleep(20); // covers socket reconnect (≈5ms) + pull + first retry delay (5ms)
+      const attemptsAfterFirstCycle = server.listAttempts;
+      expect(attemptsAfterFirstCycle).toBeGreaterThan(attemptsBeforeReset + 1); // at least 2 new attempts
+
+      engine.stop();
+    });
+
+    it("a WS reconnect (onOpen) clears the pending pull retry timer before it fires", async () => {
+      // Scenario: pull fails → retry timer armed for 50ms.
+      // BEFORE that 50ms elapses, the WS reconnects (onOpen fires, calls resync()).
+      // resync() clears retryTimer immediately. The 50ms timer must never fire.
+      // Without the clearTimeout fix, the 50ms timer fires a second pull at +50ms.
+      //
+      // Implementation: use autoOpen=false so we control when serverOpen fires.
+      // After pull 0 fails, we manually fire serverOpen on the new socket before the retry fires.
+      const server = new FakeServer();
+      server.autoOpen = false; // manual control over socket open timing
+      server.alwaysRejectListWith = { status: 503, code: "unavailable" };
+
+      const engine = new SyncEngine({
+        client: new ApiClient({ baseUrl: "http://test", fetchFn: server.fetchFn }),
+        storage: new MemoryStorage(),
+        socketFactory: server.socketFactory,
+        wsUrl: () => "ws://test/api/v1/ws?token=t",
+        backoff: { baseMs: 50, maxMs: 200, random: () => 1 },
+        pingIntervalMs: 500,
+      });
+      engine.onEvent(() => {});
+
+      await engine.start();
+      // Manually open socket → triggers resync() → pull 0 fails → retry timer armed for 50ms.
+      server.lastSocket()!.serverOpen();
+      await sleep(5); // pull 0 completes (fails); retry timer armed at t+50ms
+
+      expect(server.listAttempts).toBe(1);
+
+      // Simulate a "WS nudge / reconnect" by opening the socket NOW (well before the 50ms timer).
+      // This is what happens when the push notification wakes the client or a new WS connection opens.
+      server.lastSocket()!.serverOpen(); // fires onOpen → resync() → clearTimeout(retryTimer)
+      await sleep(5); // pull 1 fires immediately (from wake), fails
+
+      expect(server.listAttempts).toBe(2); // pull 1 fired from wake, not from the 50ms timer
+
+      // The OLD 50ms retry timer must have been cleared by resync(). A NEW 50ms timer was set
+      // after pull 1 failed, but we don't advance that far. Verify nothing fires in next 40ms
+      // (which is within the OLD timer's remaining window of ~45ms, but before the new one).
+      await sleep(40);
+      expect(server.listAttempts).toBe(2); // no duplicate from cancelled original timer
+
+      engine.stop();
+    });
   });
 
   // Item 2 fix: stop() racing an in-flight resync must not emit status:live or start pings.
