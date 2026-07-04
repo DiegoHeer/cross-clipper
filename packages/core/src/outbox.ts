@@ -2,7 +2,7 @@ import { ulid } from "ulidx";
 
 import { ApiError, NetworkError, type ApiClient } from "./api/client";
 import type { SyncStorage } from "./storage";
-import type { Item } from "./types";
+import type { Item, ItemKind } from "./types";
 
 const OUTBOX_KEY = "cc.outbox";
 
@@ -62,6 +62,31 @@ export class Outbox {
     await this.persist();
     void this.flush();
     return id;
+  }
+
+  /**
+   * Enqueue an entry with a PRE-ASSIGNED id (App Group drain path).
+   *
+   * Used when draining the share-extension outbox mirror into the main app's
+   * Outbox. The caller supplies the same client ULID that was used in the
+   * extension's failed POST — preserving idempotency (system spec §8).
+   *
+   * Idempotent: if an entry with the given id already exists, this is a no-op
+   * (drain-after-crash could double-add).
+   */
+  async enqueue(entry: {
+    id: string;
+    kind: ItemKind;
+    body: string;
+    targetDeviceId?: string | null;
+  }): Promise<void> {
+    // Idempotency check — skip if already queued.
+    if (this.entries.some((e) => e.id === entry.id)) return;
+    const outboxEntry: OutboxEntry = { id: entry.id, kind: entry.kind, body: entry.body, attempts: 0 };
+    if (entry.targetDeviceId) outboxEntry.target_device_id = entry.targetDeviceId;
+    this.entries.push(outboxEntry);
+    await this.persist();
+    void this.flush();
   }
 
   /**
