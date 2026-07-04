@@ -115,6 +115,122 @@ describe("Outbox", () => {
     expect("target_device_id" in created[1]!).toBe(false);
   });
 
+  // ---------------------------------------------------------------------------
+  // cancel() tests
+  // ---------------------------------------------------------------------------
+
+  it("cancel removes a queued entry before it sends and persists the removal", async () => {
+    const server = new FakeServer();
+    server.failNextCreates = 100; // fully offline
+    const storage = new MemoryStorage();
+    const { outbox } = makeOutbox(server, storage);
+    await outbox.load();
+    // Stop so the auto-flush on send() is a no-op — entry stays at attempts=0
+    outbox.stop();
+
+    const id = await outbox.send("text", "cancel-me");
+    // Entry must be in pending before cancel
+    expect(outbox.pending().map((e) => e.id)).toContain(id);
+
+    const cancelled = await outbox.cancel(id);
+    expect(cancelled).toBe(true);
+    expect(outbox.pending().map((e) => e.id)).not.toContain(id);
+
+    // Persisted JSON must also not contain the entry
+    const raw = await storage.get("cc.outbox");
+    const persisted = JSON.parse(raw ?? "[]") as Array<{ id: string }>;
+    expect(persisted.map((e) => e.id)).not.toContain(id);
+
+    // After server recovers and a fresh outbox loads + flushes, NO createItem for that id
+    server.failNextCreates = 0;
+    const { outbox: outbox2 } = makeOutbox(server, storage);
+    await outbox2.load();
+    await outbox2.flush();
+    await sleep(20);
+    expect(server.postAttempts).toBe(0); // never sent
+    expect(server.items).toHaveLength(0);
+  });
+
+  it("cancel returns false for an unknown id", async () => {
+    const server = new FakeServer();
+    const { outbox } = makeOutbox(server);
+    await outbox.load();
+    const cancelled = await outbox.cancel("01UNKNOWNID0000000000000000");
+    expect(cancelled).toBe(false);
+  });
+
+  it("cancel returns false while a send is in-flight and the send completes normally", async () => {
+    // Use a slow server so we can call cancel while flush is executing
+    let resolveCreate!: (item: unknown) => void;
+    const createPromise = new Promise<unknown>((r) => {
+      resolveCreate = r;
+    });
+    const capturedId: { value: string } = { value: "" };
+    const client = {
+      createItem: async (input: Record<string, unknown>) => {
+        capturedId.value = input["id"] as string;
+        // Block until test resolves
+        return createPromise;
+      },
+    } as unknown as ApiClient;
+    const storage = new MemoryStorage();
+    const events: OutboxEvent[] = [];
+    const outbox = new Outbox({
+      client,
+      storage,
+      onEvent: (e) => events.push(e),
+    });
+    await outbox.load();
+
+    // Start a send — flush begins immediately (async), createItem blocks
+    const sendPromise = outbox.send("text", "in-flight");
+    // Yield to let flush enter createItem
+    await new Promise((r) => setTimeout(r, 0));
+
+    const outboxId = await sendPromise;
+    // Flush is inside createItem now (flushing=true)
+    const cancelled = await outbox.cancel(outboxId);
+    expect(cancelled).toBe(false);
+
+    // Unblock the in-flight send — it must complete normally
+    resolveCreate({
+      id: outboxId,
+      kind: "text",
+      body: "in-flight",
+      origin_device_id: "cli",
+      target_device_id: null,
+      blob_id: null,
+      created_at: "2026-07-03T00:00:00",
+      deleted_at: null,
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(events.some((e) => e.type === "delivered")).toBe(true);
+    expect(outbox.pending()).toHaveLength(0);
+  });
+
+  it("cancel returns false for entries[0] that has already been attempted (retry gap)", async () => {
+    const server = new FakeServer();
+    server.failNextCreates = 100; // fully offline — stays in retry loop
+    const storage = new MemoryStorage();
+    const { outbox } = makeOutbox(server, storage);
+    await outbox.load();
+
+    const id = await outbox.send("text", "retry-me");
+    // Wait for first attempt to fail — outbox is now in retry gap (flushing=false, attempts>=1)
+    await sleep(10);
+
+    // Entry is still pending but was already POSTed once — cancel must refuse
+    expect(outbox.pending().map((e) => e.id)).toContain(id);
+    const pending = outbox.pending();
+    // Verify the entry has been attempted (attempts > 0) before testing cancel
+    expect(pending[0]?.attempts).toBeGreaterThan(0);
+    const cancelled = await outbox.cancel(id);
+    expect(cancelled).toBe(false);
+
+    outbox.stop();
+  });
+
   it("halts on 401, accepts sends while halted, and resumes after re-auth", async () => {
     const server = new FakeServer();
     // Reject the first two creates with 401 to keep both items in queue

@@ -64,6 +64,32 @@ export class Outbox {
     return id;
   }
 
+  /**
+   * Cancel a queued entry by id before it has been sent to the server.
+   *
+   * Returns `true` if the entry was found and removed; `false` if:
+   *   - A flush is currently in progress (`flushing === true`), OR
+   *   - The head entry (`entries[0]`) has already been attempted at least once
+   *     — even between retries `flushing` is false, but the entry may have
+   *     reached the server and we cannot safely cancel it, OR
+   *   - No entry with that id exists.
+   *
+   * Entries beyond index 0 are safe to cancel at any time because the outbox
+   * processes FIFO and they can never have been POSTed while a prior entry
+   * is still at the head.
+   */
+  async cancel(id: string): Promise<boolean> {
+    if (this.flushing) return false;
+    const idx = this.entries.findIndex((e) => e.id === id);
+    if (idx === -1) return false;
+    // Head entry with attempts > 0 has already been POSTed at least once —
+    // refuse to cancel even though flushing is false (we're between retries).
+    if (idx === 0 && this.entries[0]!.attempts > 0) return false;
+    this.entries.splice(idx, 1);
+    await this.persist();
+    return true;
+  }
+
   stop(): void {
     this.stopped = true;
     clearTimeout(this.retryTimer);
