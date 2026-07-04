@@ -47,18 +47,36 @@ export type AppStateLike = {
   ): { remove(): void };
 };
 
+/** Minimal notification sink interface — injected so tests stay pure. */
+export interface AlertSink {
+  onItem(item: Item): Promise<void>;
+}
+
 export interface SyncControllerDeps {
   storage: SyncStorage;
   socketFactory: SocketFactory;
   fetchFn?: typeof fetch;
   /** Injectable for testing; defaults to RN AppState. */
   appState?: AppStateLike;
+  /** Injectable alert sink (AlertManager in production, no-op in tests). */
+  alertSink?: AlertSink;
 }
 
 export interface SyncSnapshot {
   status: SyncStatus;
   items: Item[];
   devices: Device[];
+  /**
+   * True once doWake() has completed its FIRST auth resolution (either path:
+   * no-auth or authed). False before that point so the UI can gate on it.
+   * Stays true for the lifetime of the controller — sleep/wake cycles do NOT
+   * reset it.
+   */
+  ready: boolean;
+  /** Whether the user is authenticated (auth loaded from storage). */
+  authed: boolean;
+  /** The base URL of the configured server (null when unauthenticated). */
+  baseUrl: string | null;
   /** The authenticated device's own id (for self-exclusion in target picker). */
   selfDeviceId: string | null;
   /** Outbox ids currently pending delivery. */
@@ -81,6 +99,13 @@ export class SyncController {
   private waking: Promise<void> | null = null;
   private authRequired = false;
   private listeners: Array<() => void> = [];
+  /** Whether we have successfully loaded auth from storage (or completed sign-in). */
+  private authedFlag = false;
+  /**
+   * Set to true after doWake() completes its FIRST auth resolution.
+   * Never reset to false — sleep/wake cycles must not re-hide the gate.
+   */
+  private readyFlag = false;
 
   constructor(private readonly deps: SyncControllerDeps) {
     this.feed = new FeedStore(deps.storage);
@@ -135,7 +160,15 @@ export class SyncController {
       return;
     }
     this.auth = await this.loadAuth();
-    if (!this.auth) return;
+    if (!this.auth) {
+      this.authedFlag = false;
+      this.readyFlag = true;
+      this.emit();
+      return;
+    }
+    this.authedFlag = true;
+    this.readyFlag = true;
+    this.emit();
     const { baseUrl, token } = this.auth;
 
     this.client = new ApiClient({
@@ -224,6 +257,40 @@ export class SyncController {
     this.emit();
   }
 
+  /**
+   * Persist auth credentials and wake the engine.
+   * Called by the onboarding flow after a successful login.
+   * Auth is persisted by authPersist.saveAuth() BEFORE this is called;
+   * this method just re-wakes the engine so it picks up the new credentials.
+   */
+  async onSignedIn(): Promise<void> {
+    this.auth = await this.loadAuth();
+    if (this.auth) {
+      this.authedFlag = true;
+      this.authRequired = false;
+      this.emit();
+    }
+    // Restart the engine with the new auth
+    this.sleep();
+    await this.wake();
+  }
+
+  /**
+   * Clear auth and stop the engine.
+   * The caller (ServerSection / sign-out button) is responsible for clearing
+   * AsyncStorage before calling this.
+   */
+  signOut(): void {
+    this.sleep();
+    this.auth = null;
+    this.authedFlag = false;
+    this.authRequired = false;
+    this.devices = [];
+    this.failed.clear();
+    void this.feed.clear();
+    this.emit();
+  }
+
   /** Revoke a device. Refreshes the device list on success. */
   async revokeDevice(id: string): Promise<void> {
     if (!this.client) throw new Error("not authenticated");
@@ -239,6 +306,9 @@ export class SyncController {
       status: this.status,
       items: this.feed.list(),
       devices: [...this.devices],
+      ready: this.readyFlag,
+      authed: this.authedFlag,
+      baseUrl: this.auth?.baseUrl ?? null,
       selfDeviceId: this.auth?.deviceId ?? null,
       pendingIds: (this.outbox?.pending() ?? []).map((e) => e.id),
       failedIds: [...this.failed.keys()],
@@ -266,6 +336,11 @@ export class SyncController {
     switch (e.type) {
       case "item":
         await this.feed.upsert(e.item);
+        // AlertSink consumes new items for notification policy.
+        // AlertManager is injected — no sync logic added here.
+        if (this.deps.alertSink) {
+          void this.deps.alertSink.onItem(e.item);
+        }
         this.emit();
         break;
       case "item_deleted":

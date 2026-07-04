@@ -18,6 +18,9 @@ import { AsyncStorageAdapter } from "../platform/storage";
 import { rnSocketFactory } from "../platform/socket";
 import { SyncController } from "./SyncController";
 import type { SyncSnapshot } from "./SyncController";
+import { AlertManager } from "../alerts/AlertManager";
+import { expoNotificationSink } from "../alerts/notifications";
+import { loadPrefs } from "../settings/prefs";
 
 // ─── Context ─────────────────────────────────────────────────────────────────
 
@@ -26,6 +29,10 @@ interface SyncContextValue extends SyncSnapshot {
   remove(id: string): Promise<void>;
   renameDevice(id: string, name: string): Promise<void>;
   revokeDevice(id: string): Promise<void>;
+  /** Call after authPersist.saveAuth() to wake the engine with new credentials. */
+  onSignedIn(): Promise<void>;
+  /** Stop the engine and clear in-memory auth. Caller clears storage first. */
+  signOut(): void;
 }
 
 const SyncContext = createContext<SyncContextValue | null>(null);
@@ -42,13 +49,25 @@ export function SyncProvider({ children, controller: injected }: SyncProviderPro
   const ctrlRef = useRef<SyncController | null>(null);
 
   if (!ctrlRef.current) {
-    ctrlRef.current =
-      injected ??
-      new SyncController({
-        storage: new AsyncStorageAdapter(),
+    if (injected) {
+      ctrlRef.current = injected;
+    } else {
+      const storage = new AsyncStorageAdapter();
+      // Wire AlertManager as the alertSink so SyncController notifies on new items.
+      // AlertManager consumes items; it does not drive sync.
+      const alertSink = new AlertManager({
+        storage,
+        notifications: expoNotificationSink,
+        getPrefs: loadPrefs,
+        getSelfDeviceId: async () => ctrlRef.current?.snapshot().selfDeviceId ?? null,
+      });
+      ctrlRef.current = new SyncController({
+        storage,
         socketFactory: rnSocketFactory,
         appState: AppState,
+        alertSink,
       });
+    }
   }
   const ctrl = ctrlRef.current;
 
@@ -76,9 +95,12 @@ export function SyncProvider({ children, controller: injected }: SyncProviderPro
 
   const revokeDevice = useCallback((id: string) => ctrl.revokeDevice(id), [ctrl]);
 
+  const onSignedIn = useCallback(() => ctrl.onSignedIn(), [ctrl]);
+  const signOut = useCallback(() => ctrl.signOut(), [ctrl]);
+
   const value = useMemo(
-    () => ({ ...snapshot, send, remove, renameDevice, revokeDevice }),
-    [snapshot, send, remove, renameDevice, revokeDevice],
+    () => ({ ...snapshot, send, remove, renameDevice, revokeDevice, onSignedIn, signOut }),
+    [snapshot, send, remove, renameDevice, revokeDevice, onSignedIn, signOut],
   );
 
   return React.createElement(SyncContext.Provider, { value }, children);
