@@ -94,7 +94,8 @@ class Hub:
                 offline_transitions.append(device_id)
 
         # Fire device_changed for each device that went offline due to pruning.
-        for _ in offline_transitions:
+        # The event carries no device id — same shape as the router's disconnect path.
+        for _device_id in offline_transitions:
             try:
                 await self.broadcast(user_id, {"type": "device_changed"})
             except Exception:  # noqa: BLE001
