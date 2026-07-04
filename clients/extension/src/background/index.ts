@@ -1,9 +1,10 @@
 import browser from "webextension-polyfill";
 import { EVENTS_PORT, isPopupRequest } from "../shared/messages";
-import { loadAuth, loadPrefs } from "../shared/settings";
+import { PREFS_KEY, loadAuth, loadPrefs } from "../shared/settings";
 import { ExtensionStorage } from "../shared/storage";
 import { AlertManager } from "./alerts";
 import { BackgroundController } from "./controller";
+import { onMenuClicked, syncContextMenus } from "./menus";
 import { browserSocketFactory } from "./socket";
 
 const storage = new ExtensionStorage();
@@ -31,6 +32,21 @@ const controller = new BackgroundController({
 });
 controller.onPopupOpened = () => void alerts.clearBadge();
 
+const menuDeps = {
+  contextMenus: browser.contextMenus,
+  send: async (kind: "text" | "link", body: string) => {
+    await controller.handleRequest({ type: "send", kind, body, targetDeviceId: null });
+  },
+  flash: () => alerts.flashBadge(),
+};
+
+browser.contextMenus.onClicked.addListener((info) => void onMenuClicked(menuDeps, info));
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && PREFS_KEY in changes) {
+    void loadPrefs().then((p) => syncContextMenus(menuDeps, p));
+  }
+});
+
 browser.notifications.onClicked.addListener(() => {
   void browser.action.openPopup().catch(() =>
     browser.windows.create({
@@ -57,6 +73,7 @@ browser.runtime.onConnect.addListener((port) => {
 browser.runtime.onInstalled.addListener(() => {
   void browser.alarms.create("cc-tick", { periodInMinutes: 1 });
   void controller.wake();
+  void loadPrefs().then((p) => syncContextMenus(menuDeps, p));
 });
 browser.runtime.onStartup.addListener(() => void controller.wake());
 browser.alarms.onAlarm.addListener((alarm) => {
