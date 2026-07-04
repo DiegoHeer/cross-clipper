@@ -2,14 +2,12 @@ import { StrictMode, useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import { subscribeEvents, requestBackground } from "../shared/bridge";
+import { loadPrefs } from "../shared/settings";
 import { initTheme } from "../theme/theme";
 import { Toast } from "./Toast";
 import type { ToastState } from "./Toast";
 import "../theme/tokens.css";
 import "../ui/ui.css";
-
-// Auto-dismiss after 5 s for synced captures.
-const SYNCED_COUNTDOWN_MS = 5_000;
 
 // Tauri's invoke is a global in the webview context.
 declare function invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
@@ -36,6 +34,7 @@ export function ToastApp() {
 
   // Listen directly on "cc:capture-result" — the channel background/main.tsx
   // emits via onCaptureResult. This is a raw Tauri event, NOT the cc:evt bus.
+  // Prefs are read per-event so runtime changes take effect immediately.
   useEffect(() => {
     let live = true;
     const p = listen<{
@@ -44,14 +43,19 @@ export function ToastApp() {
       outboxId?: string;
     }>("cc:capture-result", ({ payload }) => {
       if (!live) return;
-      setToast({
-        state: payload.state,
-        snippet: payload.snippet,
-        outboxId: payload.outboxId,
+      void loadPrefs().then((prefs) => {
+        if (!live) return;
+        if (!prefs.captureToastEnabled) return;
+        const countdownMs = payload.state === "synced" ? prefs.captureToastDurationMs : 0;
+        setToast({
+          state: payload.state,
+          snippet: payload.snippet,
+          outboxId: payload.outboxId,
+        });
+        setCountdownMs(countdownMs);
+        setCaptureId((n) => n + 1);
+        void invoke("show_window", { label: "toast" });
       });
-      setCountdownMs(payload.state === "synced" ? SYNCED_COUNTDOWN_MS : 0);
-      setCaptureId((n) => n + 1);
-      void invoke("show_window", { label: "toast" });
     });
     return () => {
       live = false;
@@ -67,20 +71,24 @@ export function ToastApp() {
     const p = subscribeEvents((e) => {
       if (!live) return;
       if (e.type === "toast_update") {
-        // Compute the outboxId match once so both setToast and setCountdownMs
-        // act on the same decision (avoids unconditional countdown reset).
-        setToast((prev) => {
-          if (!prev || prev.outboxId !== e.outboxId) return prev;
-          if (e.state === "cancelled") {
-            // Undo confirmed — hide the window and clear toast state.
+        // For "synced" flip (queued→synced), read prefs to get the duration.
+        // For "cancelled", no prefs needed — just hide immediately.
+        if (e.state === "cancelled") {
+          setToast((prev) => {
+            if (!prev || prev.outboxId !== e.outboxId) return prev;
             void invoke("hide_window", { label: "toast" });
             return null;
-          }
-          if (e.state === "synced") {
-            setCountdownMs(SYNCED_COUNTDOWN_MS);
-          }
-          return { ...prev, state: e.state };
-        });
+          });
+        } else if (e.state === "synced") {
+          void loadPrefs().then((prefs) => {
+            if (!live) return;
+            setToast((prev) => {
+              if (!prev || prev.outboxId !== e.outboxId) return prev;
+              setCountdownMs(prefs.captureToastDurationMs);
+              return { ...prev, state: e.state };
+            });
+          });
+        }
       }
     });
     return () => {
