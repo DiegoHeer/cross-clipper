@@ -12,7 +12,7 @@
 //! `set_tray_state` swaps the tooltip to reflect the current state.
 
 use tauri::{
-    menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder},
+    menu::{CheckMenuItem, CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder},
     tray::{TrayIcon, TrayIconBuilder},
     AppHandle, Manager, Runtime,
 };
@@ -33,10 +33,12 @@ pub enum TrayState {
 // ---------------------------------------------------------------------------
 
 /// Create the tray icon and attach event handlers.  Must be called once from
-/// `setup`.  The tray icon handle is returned; store it in managed state so
-/// `set_tray_state` can retrieve it.
-pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> {
-    let menu = build_menu(app)?;
+/// `setup`.  Returns `(TrayIcon, CheckMenuItem)` — callers must store both in
+/// managed state so `set_tray_state` and `set_capture_check` can retrieve them.
+pub fn build_tray<R: Runtime>(
+    app: &AppHandle<R>,
+) -> tauri::Result<(TrayIcon<R>, CheckMenuItem<R>)> {
+    let (menu, toggle_capture) = build_menu(app)?;
 
     let mut builder = TrayIconBuilder::new()
         .menu(&menu)
@@ -50,7 +52,7 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> 
         builder = builder.icon(icon);
     }
 
-    builder
+    let tray = builder
         .on_tray_icon_event(|tray, event| {
             use tauri::tray::TrayIconEvent;
             if let TrayIconEvent::Click {
@@ -66,14 +68,16 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> 
         .on_menu_event(|app, event| {
             handle_menu_event(app, event.id.as_ref());
         })
-        .build(app)
+        .build(app)?;
+
+    Ok((tray, toggle_capture))
 }
 
 // ---------------------------------------------------------------------------
 // Menu construction
 // ---------------------------------------------------------------------------
 
-fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, CheckMenuItem<R>)> {
     let open = MenuItemBuilder::with_id("open", "Open CrossClipper").build(app)?;
     let toggle_capture = CheckMenuItemBuilder::with_id("toggle_capture", "Capture hotkey enabled")
         .checked(true)
@@ -82,14 +86,16 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let settings = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 
-    MenuBuilder::new(app)
+    let menu = MenuBuilder::new(app)
         .item(&open)
         .item(&toggle_capture)
         .item(&pause)
         .item(&settings)
         .separator()
         .item(&quit)
-        .build()
+        .build()?;
+
+    Ok((menu, toggle_capture))
 }
 
 // ---------------------------------------------------------------------------
@@ -125,10 +131,12 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
                     } else {
                         TrayState::Paused
                     };
-                    // Drop the lock before calling set_tray_state (avoids
-                    // potential deadlock if set_tray_state ever reads state).
+                    // Drop the lock before calling set_tray_state / set_capture_check
+                    // (avoids potential deadlock if those ever read state).
                     drop(s);
                     set_tray_state(app, new_state);
+                    // Sync the CheckMenuItem checked state (fix: was never updated).
+                    set_capture_check(app, new_enabled);
                 }
             }
         }
@@ -199,6 +207,18 @@ pub fn set_tray_state<R: Runtime>(app: &AppHandle<R>, state: TrayState) {
     }
 }
 
+/// Sync the `toggle_capture` CheckMenuItem checked state.
+///
+/// Must be called from every code path that changes `capture_enabled` so the
+/// menu stays in sync with the actual state:
+/// * tray `toggle_capture` menu-event handler
+/// * `set_capture_enabled` IPC command
+pub fn set_capture_check<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
+    if let Some(check_handle) = app.try_state::<CheckMenuHandle>() {
+        let _ = check_handle.0.set_checked(enabled);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // TrayHandle managed state
 // ---------------------------------------------------------------------------
@@ -216,3 +236,17 @@ pub struct TrayHandle(pub tauri::tray::TrayIcon<tauri::Wry>);
 // The unsafe impls are guarded to Wry only via the concrete type above.
 unsafe impl Send for TrayHandle {}
 unsafe impl Sync for TrayHandle {}
+
+// ---------------------------------------------------------------------------
+// CheckMenuHandle managed state
+// ---------------------------------------------------------------------------
+
+/// Holds the `toggle_capture` `CheckMenuItem` so `set_capture_check` can
+/// update its checked state without a generic `R: Runtime` parameter.
+///
+/// Using the concrete `Wry` runtime is idiomatic (same pattern as
+/// `TrayHandle`).  `CheckMenuItem<Wry>` is `Send + Sync`.
+pub struct CheckMenuHandle(pub CheckMenuItem<tauri::Wry>);
+
+unsafe impl Send for CheckMenuHandle {}
+unsafe impl Sync for CheckMenuHandle {}

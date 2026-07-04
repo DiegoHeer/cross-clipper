@@ -139,7 +139,17 @@ fn pause_capture(app: AppHandle, minutes: u64) {
 #[tauri::command]
 fn set_capture_enabled(app: AppHandle, enabled: bool) {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
-    use tray::{set_tray_state, TrayState};
+    use tray::{set_capture_check, set_tray_state, TrayState};
+
+    // Fix 5 (minor): when re-enabling, respect any active pause so we don't
+    // stomp its tooltip with Normal.
+    let still_paused = if enabled {
+        app.try_state::<HotkeyStateMutex>()
+            .map(|st| st.0.lock().unwrap().is_capture_paused())
+            .unwrap_or(false)
+    } else {
+        false
+    };
 
     if let Some(state) = app.try_state::<HotkeyStateMutex>() {
         let mut s = state.0.lock().unwrap();
@@ -153,12 +163,16 @@ fn set_capture_enabled(app: AppHandle, enabled: bool) {
             }
         }
     }
-    let new_state = if enabled {
-        TrayState::Normal
-    } else {
+
+    // Fix 5: when re-enabling, keep Paused tooltip if a timed pause is active.
+    let new_state = if !enabled || still_paused {
         TrayState::Paused
+    } else {
+        TrayState::Normal
     };
     set_tray_state(&app, new_state);
+    // Fix 2 (major): sync CheckMenuItem checked state on every path.
+    set_capture_check(&app, enabled);
 }
 
 /// Show the flyout window (called from the webview).
@@ -211,6 +225,22 @@ fn set_tray_pending(app: AppHandle, pending: bool) {
     set_tray_state(&app, state);
 }
 
+/// Return and clear boot-time hotkey conflicts (decision 7 — pull-on-boot).
+///
+/// The background webview calls this once during `main()` startup, after it
+/// has finished subscribing to events.  Using drain semantics ensures that
+/// subsequent calls (e.g. after a JS hot-reload) return an empty list rather
+/// than re-notifying for the same conflicts.
+#[tauri::command]
+fn get_boot_conflicts(app: AppHandle) -> Vec<hotkeys::BootConflict> {
+    app.try_state::<HotkeyStateMutex>()
+        .map(|state| {
+            let mut s = state.0.lock().unwrap();
+            std::mem::take(&mut s.boot_conflicts)
+        })
+        .unwrap_or_default()
+}
+
 // ---------------------------------------------------------------------------
 // Invoke-handler macro — include platform-gated commands
 // ---------------------------------------------------------------------------
@@ -247,11 +277,13 @@ pub fn run() {
             "Ctrl+Alt+V",
         ))))
         .setup(|app| {
-            // Build the tray and store the handle in managed state.
-            let tray = tray::build_tray(app.handle())?;
+            // Build the tray and store both handles in managed state.
+            let (tray, check_item) = tray::build_tray(app.handle())?;
             app.manage(tray::TrayHandle(tray));
+            app.manage(tray::CheckMenuHandle(check_item));
 
-            // Register default hotkeys.
+            // Register default hotkeys (conflicts stored in HotkeyState for
+            // pull-on-boot via get_boot_conflicts — see decision 7).
             register_default_hotkeys(app.handle())?;
 
             Ok(())
@@ -268,6 +300,7 @@ pub fn run() {
             show_window,
             hide_window,
             set_tray_pending,
+            get_boot_conflicts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running CrossClipper");
@@ -290,6 +323,7 @@ pub fn run() {
             show_window,
             hide_window,
             set_tray_pending,
+            get_boot_conflicts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running CrossClipper");
@@ -309,24 +343,26 @@ fn register_default_hotkeys(app: &AppHandle) -> tauri::Result<()> {
     let cap_sc = hotkeys::parse_accelerator(capture_combo);
     let fly_sc = hotkeys::parse_accelerator(flyout_combo);
 
-    let app_cap = app.clone();
-    let app_fly = app.clone();
-
     if let Some(sc) = cap_sc {
         let result = app.global_shortcut().on_shortcut(sc, move |app, _sc, _ev| {
             emit_capture_event(app);
         });
         if let Err(e) = result {
-            // Decision 7: failed registration → emit notification (non-blocking).
+            // Decision 7 (fix 3): store conflict for pull-on-boot instead of
+            // emitting to the not-yet-subscribed background webview.
             eprintln!("[crossclipper] Capture hotkey conflict: {e}");
-            let _ = app_cap.emit_to(
-                "background",
-                "cc:hotkey-conflict",
-                serde_json::json!({
-                    "combo": capture_combo,
-                    "role": "capture"
-                }),
-            );
+            if let Some(state) = app.try_state::<HotkeyStateMutex>() {
+                state
+                    .0
+                    .lock()
+                    .unwrap()
+                    .boot_conflicts
+                    .push(hotkeys::BootConflict {
+                        combo: capture_combo.to_string(),
+                        role: "capture".to_string(),
+                        message: e.to_string(),
+                    });
+            }
         }
     }
 
@@ -336,14 +372,18 @@ fn register_default_hotkeys(app: &AppHandle) -> tauri::Result<()> {
         });
         if let Err(e) = result {
             eprintln!("[crossclipper] Flyout hotkey conflict: {e}");
-            let _ = app_fly.emit_to(
-                "background",
-                "cc:hotkey-conflict",
-                serde_json::json!({
-                    "combo": flyout_combo,
-                    "role": "flyout"
-                }),
-            );
+            if let Some(state) = app.try_state::<HotkeyStateMutex>() {
+                state
+                    .0
+                    .lock()
+                    .unwrap()
+                    .boot_conflicts
+                    .push(hotkeys::BootConflict {
+                        combo: flyout_combo.to_string(),
+                        role: "flyout".to_string(),
+                        message: e.to_string(),
+                    });
+            }
         }
     }
 
@@ -356,9 +396,37 @@ fn register_default_hotkeys(app: &AppHandle) -> tauri::Result<()> {
 
 /// Read clipboard ONCE via the trait, map to payload, emit to `background`.
 fn emit_capture_event<R: Runtime>(app: &AppHandle<R>) {
-    // Check pause state before reading the clipboard.
+    // Defense-in-depth: check both capture_enabled and pause state in a single
+    // lock acquisition.  This guards against silent OS-unregister failures that
+    // would otherwise let through a spurious capture event.
     if let Some(state) = app.try_state::<HotkeyStateMutex>() {
-        if state.0.lock().unwrap().is_capture_paused() {
+        let mut s = state.0.lock().unwrap();
+        // Fix 4 (minor): lazy pause-expiry cleanup — if the pause deadline has
+        // passed, reset tray state to reflect capture_enabled before returning.
+        if let hotkeys::PauseState::PausedUntil(deadline) = s.pause {
+            if std::time::Instant::now() >= deadline {
+                // Pause expired. Reset so subsequent checks see Active.
+                s.pause = hotkeys::PauseState::Active;
+                // Update tray to reflect the actual capture_enabled state.
+                let enabled = s.capture_enabled;
+                drop(s);
+                let new_state = if enabled {
+                    tray::TrayState::Normal
+                } else {
+                    tray::TrayState::Paused
+                };
+                tray::set_tray_state(app, new_state);
+                // If capture is now disabled, block this event too.
+                if !enabled {
+                    return;
+                }
+                // Fall through to emit the capture event.
+            } else {
+                // Still paused.
+                return;
+            }
+        } else if s.is_capture_blocked() {
+            // Active pause state but capture_enabled=false.
             return;
         }
     }

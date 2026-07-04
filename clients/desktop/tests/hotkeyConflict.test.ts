@@ -1,25 +1,70 @@
 /**
- * Tests for the cc:hotkey-conflict listener (m1 capstone fix).
+ * Tests for boot-time hotkey-conflict pull (fix 3 — pull-on-boot).
  *
- * Verifies that listenHotkeyConflict registers a listener which fires
- * tauriNotifier.notify with the correct arguments when the Rust side emits
- * a boot-time hotkey conflict event.
+ * Verifies that notifyBootConflicts invokes get_boot_conflicts and fires
+ * notifier.notify for each returned conflict.  The Rust side drains the list;
+ * the mock simulates drain semantics by returning the configured value once.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetEvents, emit } from "./tauriMock";
-import { listenHotkeyConflict } from "../src/background/main";
+import { notifyBootConflicts, type BootConflict } from "../src/background/main";
 import type { Notifier } from "../src/background/alerts";
 
+// ---------------------------------------------------------------------------
+// Mock invoke — allow per-test return values
+// ---------------------------------------------------------------------------
+
+let invokeReturn: BootConflict[] = [];
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn((_cmd: string) => Promise.resolve(invokeReturn)),
+}));
+
+import { invoke } from "@tauri-apps/api/core";
+
 beforeEach(() => {
-  __resetEvents();
+  invokeReturn = [];
+  vi.mocked(invoke).mockClear();
 });
 
-describe("listenHotkeyConflict", () => {
-  it("calls notifier.notify when cc:hotkey-conflict fires for capture role", async () => {
-    const notifier: Notifier = { notify: vi.fn().mockResolvedValue(undefined) };
-    await listenHotkeyConflict(notifier);
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
-    await emit("cc:hotkey-conflict", { combo: "Ctrl+Alt+C", role: "capture" });
+describe("notifyBootConflicts", () => {
+  it("invokes get_boot_conflicts on startup", async () => {
+    const notifier: Notifier = { notify: vi.fn().mockResolvedValue(undefined) };
+    await notifyBootConflicts(notifier);
+
+    expect(invoke).toHaveBeenCalledWith("get_boot_conflicts");
+  });
+
+  it("calls notifier.notify for each conflict returned", async () => {
+    invokeReturn = [
+      { combo: "Ctrl+Alt+C", role: "capture", message: "already registered" },
+      { combo: "Ctrl+Alt+V", role: "flyout", message: "already registered" },
+    ];
+    const notifier: Notifier = { notify: vi.fn().mockResolvedValue(undefined) };
+    await notifyBootConflicts(notifier);
+
+    expect(notifier.notify).toHaveBeenCalledTimes(2);
+    expect(notifier.notify).toHaveBeenCalledWith(
+      "hotkey-conflict-capture",
+      "Capture hotkey unavailable",
+      "Capture hotkey unavailable — pick another in Settings → Capture",
+    );
+    expect(notifier.notify).toHaveBeenCalledWith(
+      "hotkey-conflict-flyout",
+      "Capture hotkey unavailable",
+      "Capture hotkey unavailable — pick another in Settings → Capture",
+    );
+  });
+
+  it("calls notifier.notify with correct id for capture role", async () => {
+    invokeReturn = [
+      { combo: "Ctrl+Alt+C", role: "capture", message: "conflict" },
+    ];
+    const notifier: Notifier = { notify: vi.fn().mockResolvedValue(undefined) };
+    await notifyBootConflicts(notifier);
 
     expect(notifier.notify).toHaveBeenCalledWith(
       "hotkey-conflict-capture",
@@ -28,24 +73,11 @@ describe("listenHotkeyConflict", () => {
     );
   });
 
-  it("calls notifier.notify when cc:hotkey-conflict fires for flyout role", async () => {
+  it("does not call notifier.notify when no conflicts returned", async () => {
+    invokeReturn = [];
     const notifier: Notifier = { notify: vi.fn().mockResolvedValue(undefined) };
-    await listenHotkeyConflict(notifier);
+    await notifyBootConflicts(notifier);
 
-    await emit("cc:hotkey-conflict", { combo: "Ctrl+Alt+V", role: "flyout" });
-
-    expect(notifier.notify).toHaveBeenCalledWith(
-      "hotkey-conflict-flyout",
-      "Capture hotkey unavailable",
-      "Capture hotkey unavailable — pick another in Settings → Capture",
-    );
-  });
-
-  it("does not call notifier.notify when no event is emitted", async () => {
-    const notifier: Notifier = { notify: vi.fn().mockResolvedValue(undefined) };
-    await listenHotkeyConflict(notifier);
-
-    // No event emitted — notify must not be called.
     expect(notifier.notify).not.toHaveBeenCalled();
   });
 });

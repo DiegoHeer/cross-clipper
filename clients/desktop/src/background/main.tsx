@@ -47,23 +47,34 @@ const tauriNotifier: Notifier = {
 };
 
 // ---------------------------------------------------------------------------
-// Hotkey-conflict listener (exported for unit tests)
+// Boot-conflict pull (exported for unit tests)
 // ---------------------------------------------------------------------------
 
+/** Shape returned by the `get_boot_conflicts` Rust command. */
+export interface BootConflict {
+  combo: string;
+  role: string;
+  message: string;
+}
+
 /**
- * Register the cc:hotkey-conflict listener.
+ * Pull and notify boot-time hotkey conflicts (decision 7 — pull-on-boot).
  *
- * Wires a notification for boot-time hotkey registration failures (decision 7).
+ * Invokes `get_boot_conflicts` which drains the stored conflicts (drain
+ * semantics: restarts won't re-notify).  Fires a system notification per
+ * conflict.  Called once from `main()` after all listeners are wired.
+ *
  * Exported so tests can drive it without bootstrapping the full app.
  */
-export async function listenHotkeyConflict(notifier: Notifier): Promise<() => void> {
-  return listen<{ combo: string; role: string }>("cc:hotkey-conflict", ({ payload }) => {
+export async function notifyBootConflicts(notifier: Notifier): Promise<void> {
+  const conflicts = await invoke<BootConflict[]>("get_boot_conflicts");
+  for (const c of conflicts) {
     void notifier.notify(
-      `hotkey-conflict-${payload.role}`,
+      `hotkey-conflict-${c.role}`,
       "Capture hotkey unavailable",
       "Capture hotkey unavailable — pick another in Settings → Capture",
     );
-  });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -112,8 +123,10 @@ async function main(): Promise<void> {
     },
   );
 
-  // Surface boot-time hotkey conflicts as a system notification (decision 7).
-  await listenHotkeyConflict(tauriNotifier);
+  // Pull and notify boot-time hotkey conflicts (decision 7 — pull-on-boot).
+  // Replaces the former cc:hotkey-conflict listener which fired before the
+  // background webview had subscribed, causing the event to be dropped.
+  await notifyBootConflicts(tauriNotifier);
 
   // Boot the sync engine
   await controller.wake();
