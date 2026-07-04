@@ -1,0 +1,68 @@
+name: Extension E2E
+
+on:
+  pull_request:
+    paths:
+      - 'clients/extension/**'
+      - 'packages/core/**'
+      - 'server/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/extension-e2e.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'clients/extension/**'
+      - 'packages/core/**'
+      - 'server/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/extension-e2e.yml'
+
+# Note: cross-workflow needs: is not supported in GitHub Actions; this workflow
+# runs in parallel with the extension build workflow and is self-contained.
+
+concurrency:
+  group: extension-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  extension-e2e:
+    name: Extension E2E (Playwright)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install server dependencies
+        run: uv sync
+        working-directory: server
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build extension
+        run: npm run build --workspace @crossclipper/extension
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: xvfb-run -a npm run e2e --workspace @crossclipper/extension
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: clients/extension/e2e-results
