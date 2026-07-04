@@ -154,3 +154,93 @@ describe("App (live)", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("App (onboarding latch)", () => {
+  let fake: ReturnType<typeof makeFakeBrowser>;
+  let port: FakePort | null;
+
+  beforeEach(() => {
+    fake = makeFakeBrowser();
+    port = null;
+    (fake.browser.runtime as Record<string, unknown>).connect = ({ name }: { name: string }) => {
+      port = fake.makePort(name);
+      return port;
+    };
+    fake.browser.runtime.onMessage.addListener((_msg: unknown) =>
+      Promise.resolve({ ok: true, outboxId: "01X" }),
+    );
+    setFakeBrowser(fake.browser);
+  });
+
+  it("keeps Onboarding mounted through step 3 even if worker broadcasts authed=true mid-flow", async () => {
+    const { default: App } = await import("../src/popup/App");
+    render(<App />);
+
+    // First ready snapshot: not yet authed → onboarding starts
+    act(() => {
+      port!.onMessage.emit({
+        type: "snapshot",
+        state: {
+          authed: false,
+          authRequired: false,
+          baseUrl: "http://s",
+          deviceId: null,
+          status: "stopped",
+          items: [],
+          pending: [],
+          devices: [],
+        },
+      });
+    });
+
+    // Onboarding step 1 must be visible
+    expect(screen.getByText(/step 1\/3/i)).toBeInTheDocument();
+
+    // Worker broadcasts authed=true (saveAuth race) — Onboarding must STAY mounted
+    act(() => {
+      port!.onMessage.emit({
+        type: "snapshot",
+        state: {
+          authed: true,
+          authRequired: false,
+          baseUrl: "http://s",
+          deviceId: "self",
+          status: "live",
+          items: [],
+          pending: [],
+          devices: [],
+        },
+      });
+    });
+
+    // Appearance step must still be reachable — Onboarding was NOT unmounted
+    // (In the current buggy code this assertion would fail because the feed renders instead)
+    expect(screen.getByText(/step/i)).toBeInTheDocument();
+    expect(screen.queryByText(/copy something on another device/i)).toBeNull();
+  });
+
+  it("goes straight to feed when already authed on first ready snapshot", async () => {
+    const { default: App } = await import("../src/popup/App");
+    render(<App />);
+
+    act(() => {
+      port!.onMessage.emit({
+        type: "snapshot",
+        state: {
+          authed: true,
+          authRequired: false,
+          baseUrl: "http://s",
+          deviceId: "self",
+          status: "live",
+          items: [],
+          pending: [],
+          devices: [],
+        },
+      });
+    });
+
+    // No onboarding — feed empty state shown immediately
+    expect(screen.queryByText(/step 1\/3/i)).toBeNull();
+    expect(screen.getByText(/copy something on another device/i)).toBeInTheDocument();
+  });
+});

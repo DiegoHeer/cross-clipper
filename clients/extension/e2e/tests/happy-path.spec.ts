@@ -14,20 +14,13 @@ test("onboard → send → receive live → copy → filter", async ({ page, pop
   await page.getByLabel(/device name/i).fill("E2E Chrome");
   await page.getByRole("button", { name: /create account/i }).click();
 
-  // Step 3 (appearance) may render briefly before the worker's auth-state update
-  // switches the App to the live feed. Handle both races: if appearance is shown,
-  // click through; otherwise the feed already loaded.
-  const appearanceHeading = page.getByText(/appearance/i);
-  const emptyFeedHint = page.getByText(/copy something on another device/i);
-  await Promise.race([
-    appearanceHeading.waitFor({ state: "visible" }),
-    emptyFeedHint.waitFor({ state: "visible" }),
-  ]);
-  if (await appearanceHeading.isVisible()) {
-    await page.getByRole("button", { name: /start using crossclipper/i }).click();
-  }
+  // Step 3 (Appearance) is now guaranteed: the onboarding latch keeps it mounted
+  // until onComplete fires, regardless of when the worker broadcasts authed=true.
+  await expect(page.getByRole("heading", { name: /appearance/i })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: /start using crossclipper/i }).click();
 
   // --- Empty feed hint, then send
+  const emptyFeedHint = page.getByText(/copy something on another device/i);
   await expect(emptyFeedHint).toBeVisible({ timeout: 10_000 });
   await page.getByRole("textbox").fill("hello from e2e");
   await page.getByRole("textbox").press("Enter");
