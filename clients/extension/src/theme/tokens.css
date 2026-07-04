@@ -14,7 +14,7 @@
   --danger: #dc2626;
   /* accent (overridden at runtime from the user's choice; default amber) */
   --accent: #d97706;
-  --accent-fg: #ffffff;
+  --accent-fg: #1c1917;
   --accent-soft: rgba(217, 119, 6, 0.14);
   /* radii + spacing scale */
   --radius-sm: 6px;
