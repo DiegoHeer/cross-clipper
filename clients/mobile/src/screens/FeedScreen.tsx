@@ -19,7 +19,8 @@ import {
   Platform,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { useRoute, type RouteProp } from "@react-navigation/native";
+import { useRoute, useNavigation, type RouteProp } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { Item, Device } from "@crossclipper/core";
 
 import { useTheme } from "../theme/ThemeProvider";
@@ -49,11 +50,14 @@ export function FeedScreen(): React.JSX.Element {
 
   // ─── Origin filter (from DeviceDetail → Jump to feed) ─────────────────────
   const route = useRoute<RouteProp<RootTabParamList, "Feed">>();
+  const navigation = useNavigation<BottomTabNavigationProp<RootTabParamList, "Feed">>();
   const [originFilter, setOriginFilter] = useState<string | null>(
     route.params?.originDeviceId ?? null,
   );
 
-  // Sync originFilter when route param changes (re-navigation with a different device)
+  // Sync originFilter when route param changes (re-navigation with a different device).
+  // Setting null when param is undefined is idempotent — no harm if setParams already
+  // cleared it before this effect re-runs.
   useEffect(() => {
     setOriginFilter(route.params?.originDeviceId ?? null);
   }, [route.params?.originDeviceId]);
@@ -221,7 +225,10 @@ export function FeedScreen(): React.JSX.Element {
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Clear origin filter"
-            onPress={() => setOriginFilter(null)}
+            onPress={() => {
+              setOriginFilter(null);
+              navigation.setParams({ originDeviceId: undefined });
+            }}
             style={styles.filterChipDismiss}
           >
             <Text style={[styles.filterChipX, { color: tokens.textMuted }]}>✕</Text>
