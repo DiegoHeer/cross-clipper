@@ -160,14 +160,96 @@ describe("AndroidShareModal", () => {
     });
   });
 
-  it("returns null on iOS", () => {
+  it("calls goBack when sendFn returns queued (error path)", async () => {
+    const controller = await makeController();
+    // Make send() throw so the sendFn catch branch fires and returns queued.
+    jest.spyOn(controller, "send").mockRejectedValue(new Error("network error"));
+    const goBack = jest.fn();
+    const navigation = makeMockNavigation(goBack);
+    const route = makeMockRoute(shared);
+
+    const { getAllByRole } = render(
+      <Wrapper controller={controller}>
+        <AndroidShareModal navigation={navigation} route={route} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      const buttons = getAllByRole("button");
+      expect(buttons.length).toBeGreaterThanOrEqual(1);
+    });
+
+    await act(async () => {
+      const buttons = getAllByRole("button");
+      fireEvent.press(buttons[0]!);
+    });
+
+    await waitFor(() => {
+      expect(goBack).toHaveBeenCalled();
+    });
+  });
+
+  it("tapping backdrop dismisses the modal", async () => {
+    const controller = await makeController();
+    const goBack = jest.fn();
+    const navigation = makeMockNavigation(goBack);
+    const route = makeMockRoute(shared);
+
+    const { getByLabelText } = render(
+      <Wrapper controller={controller}>
+        <AndroidShareModal navigation={navigation} route={route} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getByLabelText("Dismiss share sheet")).toBeTruthy();
+    });
+
+    fireEvent.press(getByLabelText("Dismiss share sheet"));
+
+    expect(goBack).toHaveBeenCalled();
+  });
+
+  it("hardware back (onRequestClose) dismisses the modal", async () => {
+    const controller = await makeController();
+    const goBack = jest.fn();
+    const navigation = makeMockNavigation(goBack);
+    const route = makeMockRoute(shared);
+
+    const { UNSAFE_getByType } = render(
+      <Wrapper controller={controller}>
+        <AndroidShareModal navigation={navigation} route={route} />
+      </Wrapper>,
+    );
+
+    // Simulate Android hardware back button via Modal's onRequestClose prop.
+    const { Modal } = require("react-native");
+    const modalEl = UNSAFE_getByType(Modal);
+    await act(async () => {
+      modalEl.props.onRequestClose();
+    });
+
+    expect(goBack).toHaveBeenCalled();
+  });
+
+  it("renders nothing on iOS (Platform guard fires after hooks)", async () => {
     Object.defineProperty(Platform, "OS", { get: () => "ios", configurable: true });
 
+    const controller = await makeController();
     const navigation = makeMockNavigation();
     const route = makeMockRoute(shared);
 
-    // No controller or wrapper needed — should bail before rendering anything
-    const { toJSON } = render(<AndroidShareModal navigation={navigation} route={route} />);
-    expect(toJSON()).toBeNull();
+    // Hooks are always called (Rules of Hooks); SyncProvider + wrapper required
+    // even on iOS. The Platform guard fires after hooks, so the component
+    // returns null and contributes no nodes to the tree.
+    const { queryByLabelText, queryByRole } = render(
+      <Wrapper controller={controller}>
+        <AndroidShareModal navigation={navigation} route={route} />
+      </Wrapper>,
+    );
+
+    // No backdrop and no sheet buttons rendered.
+    expect(queryByLabelText("Dismiss share sheet")).toBeNull();
+    expect(queryByRole("button")).toBeNull();
   });
 });
