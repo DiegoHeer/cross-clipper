@@ -26,9 +26,9 @@ jobs:
     name: Desktop (test + lint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: npm
@@ -78,9 +78,9 @@ jobs:
     name: Windows bundle (build smoke)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: npm
@@ -94,7 +94,7 @@ jobs:
       - name: Tauri build (NSIS + MSI)
         run: npm run tauri --workspace @crossclipper/desktop -- build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: crossclipper-windows-installers
           path: |
