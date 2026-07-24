@@ -9,12 +9,12 @@
   },
   "dependencies": {
     "@crossclipper/core": "*",
-    "ws": "^8.18.0"
+    "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@types/node": "^26.1.0",
+    "@types/node": "^26.1.1",
     "@types/ws": "^8.5.0",
-    "tsx": "^4.19.0",
-    "typescript": "^6.0.3"
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
   }
 }
